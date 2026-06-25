@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import database
-from api import jobs, webhook, logs, metrics, checkpoint
+from api import jobs, webhook, logs, metrics, checkpoint, heartbeat
 from config import ServerConfig
 
 logging.basicConfig(
@@ -36,6 +36,7 @@ app.include_router(webhook.router)
 app.include_router(logs.router)
 app.include_router(metrics.router)
 app.include_router(checkpoint.router)
+app.include_router(heartbeat.router)
 
 # 静态文件（Dashboard）
 app.mount("/static", StaticFiles(directory="static"), name="static")

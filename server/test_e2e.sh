@@ -118,6 +118,18 @@ R=$(curl -s "$BASE_URL/jobs/$JOB_ID/metrics?since_step=100")
 check "since_step=100 返回 step>100" "200" "$R"
 echo ""
 
+# 11b. 上报心跳
+echo "--- 11b. 上报心跳 ---"
+R=$(curl -s -X POST "$BASE_URL/jobs/$JOB_ID/heartbeat" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "test-agent", "gpu_util": 85.0, "gpu_mem_used": 20.0, "gpu_mem_total": 24.0}')
+check "心跳上报 ok" "ok" "$R"
+
+R=$(curl -s "$BASE_URL/jobs/$JOB_ID/heartbeat")
+check "查询最新心跳 gpu_util=85" "85" "$R"
+check "查询最新心跳 agent_id" "test-agent" "$R"
+echo ""
+
 # 12. 上传模型
 echo "--- 12. 上传模型 ---"
 echo "e2e test checkpoint content" > /tmp/e2e_model.pt

@@ -32,6 +32,19 @@ CREATE TABLE IF NOT EXISTS metrics (
 );
 """
 
+_CREATE_HEARTBEATS_TABLE = """
+CREATE TABLE IF NOT EXISTS heartbeats (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id        TEXT NOT NULL,
+    agent_id      TEXT NOT NULL,
+    gpu_util      REAL,
+    gpu_mem_used  REAL,
+    gpu_mem_total REAL,
+    timestamp     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (job_id) REFERENCES jobs(id)
+);
+"""
+
 
 def get_connection() -> sqlite3.Connection:
     """获取数据库连接。"""
@@ -50,6 +63,7 @@ def init_db() -> None:
     try:
         conn.execute(_CREATE_JOBS_TABLE)
         conn.execute(_CREATE_METRICS_TABLE)
+        conn.execute(_CREATE_HEARTBEATS_TABLE)
         conn.commit()
     finally:
         conn.close()

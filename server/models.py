@@ -94,6 +94,15 @@ class HeartbeatRequest(BaseModel):
     gpu_mem_total: Optional[float] = None
 
 
+class HeartbeatResponse(BaseModel):
+    """心跳响应"""
+    agent_id: str
+    gpu_util: Optional[float] = None
+    gpu_mem_used: Optional[float] = None
+    gpu_mem_total: Optional[float] = None
+    timestamp: Optional[str] = None
+
+
 # ── Checkpoint 相关 ──
 
 class CheckpointUploadRequest(BaseModel):
