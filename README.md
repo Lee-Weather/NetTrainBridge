@@ -48,11 +48,11 @@ GradMotion 是一个分布式强化学习训练任务管理系统，让你可以
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          公 司 内 网                                        │
 │  ┌──────────────────────────────────────────────────────────────────┐      │
-│  │  训练服务器 (GPU 机器, conda 环境 nettrain)                     │      │
+│  │  训练服务器 (GPU 机器, conda 环境 F1)                           │      │
 │  │  ┌────────────────────────────────────────────────────────┐      │      │
 │  │  │  Agent - 长期运行的后台进程                             │      │      │
 │  │  │  • 轮询云服务器、抢占任务、clone 代码                   │      │      │
-│  │  │  • conda run -n nettrain 启动训练子进程                 │      │      │
+│  │  │  • conda run -n F1 启动训练子进程                       │      │      │
 │  │  │  • 增量上报日志与指标                                   │      │      │
 │  │  │  • 训练结束后上传模型                                   │      │      │
 │  │  └────────────────────────────────────────────────────────┘      │      │
@@ -93,7 +93,8 @@ NetTrainBridge/
 │   ├── plan_1.md                    # 架构蓝图
 │   ├── dev_phases.md                # 开发阶段规划
 │   ├── phase1_server_dev_plan.md    # 阶段一详细计划
-│   └── phase2_agent_dev_plan.md     # 阶段二详细计划
+│   ├── phase2_agent_dev_plan.md     # 阶段二详细计划
+│   └── phase3_dev_plan.md           # 阶段三详细计划
 │
 └── README.md
 ```
@@ -125,24 +126,24 @@ bash test_e2e.sh http://localhost:8000
 
 ### 3. 部署 Agent（公司训练机）
 
-训练服务器使用 conda 环境 `nettrain`：
+训练服务器使用 conda 环境 `F1`（Python 3.8.20，已安装训练依赖）：
 
 ```bash
-conda activate nettrain
+conda activate F1
 cd agent
 pip install -r requirements.txt
 
 # 配置云服务器地址与公司代理
 export GRADMOTION_SERVER_URL=http://你的云服务器IP:8000
 export GRADMOTION_PROXY=http://10.12.201.122:39000   # 按实际代理修改
-export GRADMOTION_WORKSPACE=/workspace/gradmotion
-export GRADMOTION_CONDA_ENV=nettrain                  # 默认值，可省略
+export GRADMOTION_WORKSPACE=~/czy/gradmotion   # 默认 ~/czy/gradmotion，可省略
+export GRADMOTION_CONDA_ENV=F1                        # 默认值，可省略
 
 # 启动 Agent
 python agent.py
 ```
 
-训练和 `pip install` 会通过 `conda run -n nettrain` 在指定环境中执行，与手动 `conda activate nettrain` 后运行效果一致。
+训练和 `pip install` 会通过 `conda run -n F1` 在指定环境中执行，与手动 `conda activate F1` 后运行效果一致。
 
 ## 使用流程
 
@@ -221,8 +222,8 @@ wget http://云服务器IP:8000/jobs/{job_id}/checkpoint/{filename}.pt
 | `GRADMOTION_HEARTBEAT_INTERVAL` | 30 | 心跳上报间隔（秒） |
 | `GRADMOTION_LOG_UPLOAD_INTERVAL` | 5 | 日志上报间隔（秒） |
 | `GRADMOTION_METRICS_UPLOAD_INTERVAL` | 10 | 指标上报间隔（秒） |
-| `GRADMOTION_WORKSPACE` | /workspace/gradmotion | 任务工作目录 |
-| `GRADMOTION_CONDA_ENV` | nettrain | 训练用 Conda 环境名，空则使用系统 Python |
+| `GRADMOTION_WORKSPACE` | ~/czy/gradmotion | 任务工作目录（clone 代码存放位置） |
+| `GRADMOTION_CONDA_ENV` | F1 | 训练用 Conda 环境名，空则使用系统 Python |
 | `GRADMOTION_TRAIN_COMMAND` | 见下方 | 训练启动命令模板 |
 | `GRADMOTION_REQUEST_TIMEOUT` | 30 | HTTP 请求超时（秒） |
 | `GRADMOTION_MAX_RETRIES` | 3 | 网络请求最大重试次数 |
@@ -252,10 +253,10 @@ PENDING → ASSIGNED → RUNNING → COMPLETED
 
 默认适配 [agi_origin](https://github.com/Lee-Weather/agi_origin.git)（AgiBot X1 人形机器人 RL 训练，基于 Isaac Gym）。
 
-Agent 在 `nettrain` conda 环境中执行：
+Agent 在 `F1` conda 环境中执行：
 
 ```bash
-conda run -n nettrain python humanoid/scripts/train.py \
+conda run -n F1 python humanoid/scripts/train.py \
   --task=x1_dh_stand --run_name={job_id} --headless
 ```
 
@@ -306,8 +307,8 @@ log/exported_policies/**/*.pt
 ## 技术栈
 
 - **云服务器**: FastAPI + SQLite + Uvicorn
-- **Agent**: Python 3.10+ + httpx + asyncio
-- **训练环境**: Conda (`nettrain`) + Isaac Gym + PyTorch
+- **Agent**: Python 3.8+ + httpx + asyncio
+- **训练环境**: Conda (`F1`, Python 3.8.20) + Isaac Gym + PyTorch
 
 ## 参考资料
 
@@ -315,3 +316,4 @@ log/exported_policies/**/*.pt
 - [开发阶段规划](plan/dev_phases.md)
 - [阶段一服务器开发计划](plan/phase1_server_dev_plan.md)
 - [阶段二 Agent 开发计划](plan/phase2_agent_dev_plan.md)
+- [阶段三 Dashboard 开发计划](plan/phase3_dev_plan.md)

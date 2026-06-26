@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import signal
 import subprocess
@@ -16,6 +17,14 @@ from log_monitor import LogMonitor
 from metrics_reader import MetricsReader
 
 logger = logging.getLogger("gradmotion.agent")
+
+
+async def _run_in_thread(func, *args, **kwargs):
+    """在后台线程执行同步函数（兼容 Python 3.8，无 asyncio.to_thread）。"""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, functools.partial(func, *args, **kwargs),
+    )
 
 
 @dataclass
@@ -47,10 +56,23 @@ class Agent:
 
     async def run(self):
         """启动 Agent，并发运行主循环与上报任务。"""
+        workspace = Path(self.config.workspace)
+        try:
+            workspace.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.error(
+                "工作目录不可用: %s (%s)。"
+                "若曾 export GRADMOTION_WORKSPACE，请先 unset 或改为可写路径，"
+                "例如: export GRADMOTION_WORKSPACE=~/czy/gradmotion",
+                workspace, e,
+            )
+            raise
+
         logger.info(
-            "Agent 启动, ID=%s, 服务器=%s, conda=%s, 轮询=%ds",
+            "Agent 启动, ID=%s, 服务器=%s, workspace=%s, conda=%s, 轮询=%ds",
             self.config.agent_id,
             self.config.server_url,
+            workspace,
             self.config.conda_env or "(系统 Python)",
             self.config.poll_interval,
         )
@@ -130,7 +152,7 @@ class Agent:
         commit_sha = job["commit_sha"]
 
         try:
-            job_dir = await asyncio.to_thread(
+            job_dir = await _run_in_thread(
                 self.job_runner.prepare, repo_url, commit_sha, job_id,
             )
         except JobRunnerError as e:
@@ -140,7 +162,7 @@ class Agent:
             )
             return
 
-        process = await asyncio.to_thread(
+        process = await _run_in_thread(
             self.job_runner.start, job_dir, job_id,
         )
         await self._update_status_safe(job_id, "RUNNING")
@@ -184,7 +206,7 @@ class Agent:
         await self._flush_logs_and_metrics()
 
         if exit_code == 0:
-            model = await asyncio.to_thread(
+            model = await _run_in_thread(
                 self.job_runner.find_best_model, job.job_dir,
             )
             if model:

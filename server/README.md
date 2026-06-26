@@ -5,7 +5,7 @@
 ## 快速启动
 
 ```bash
-conda activate nettrain
+conda activate F1
 cd server
 pip install -r requirements.txt
 python main.py

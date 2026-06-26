@@ -1,3 +1,7 @@
-httpx==0.28.1
-pydantic==2.10.4
-pynvml==12.0.0
+# GradMotion Agent dependencies
+# Requires: Python 3.8+ (tested with 3.8.20, conda env F1)
+#
+# Version upper bounds prevent pulling packages that dropped Python 3.8 support.
+
+httpx>=0.28.0,<0.29.0
+pynvml>=11.5.0,<12.0.0

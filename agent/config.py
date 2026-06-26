@@ -19,11 +19,11 @@ class AgentConfig:
     log_upload_interval: int = 5
     metrics_upload_interval: int = 10
 
-    # 工作目录
-    workspace: str = "/workspace/gradmotion"
+    # 工作目录 (默认用户主目录下，避免 /workspace 无写权限)
+    workspace: str = os.path.expanduser("~/czy/gradmotion")
 
     # Conda 环境 (训练与 pip 安装均在此环境中执行)
-    conda_env: str = "nettrain"
+    conda_env: str = "F1"
 
     # 训练命令模板 (针对 agi_origin 仓库)
     # 注意: train.py 在 humanoid/scripts/ 目录下
@@ -62,5 +62,6 @@ class AgentConfig:
             if value is not None:
                 setattr(instance, field_name, field_type(value))
 
+        instance.workspace = os.path.expanduser(instance.workspace)
         return instance
 

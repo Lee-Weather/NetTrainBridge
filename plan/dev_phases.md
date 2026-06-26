@@ -155,36 +155,44 @@ cd agent && python agent.py
 
 **前提**: 阶段 2 的 Agent 能启动训练并上报心跳。
 
+> 详细开发计划见 [phase3_dev_plan.md](phase3_dev_plan.md)
+
+### 3.0 阶段二已具备（阶段三直接复用）
+
+| 能力 | 状态 |
+|:---|:---|
+| `GET /jobs/{id}/metrics` 指标查询 | ✅ |
+| Agent 日志/指标上报循环 | ✅ |
+| GitHub Webhook 基础接收 | ✅ |
+| 最小任务列表 `index.html` | ✅ |
+
 ### 3.1 云服务器新增
 
 | 步骤 | 文件 | 功能 | 代码量 |
 |:---|:---|:---|:---|
-| 1 | `server/api/logs.py` 补充 | SSE 推送日志到浏览器 | 30 行 |
-| 2 | `server/api/metrics.py` 补充 | `GET /jobs/{id}/metrics` 返回历史指标 | 20 行 |
-| 3 | `server/static/dashboard.html` | ECharts 实时曲线 + 任务列表 | 200 行 |
+| 1 | `api/jobs.py` 补充 | `GET /jobs` 任务列表 API | 30 行 |
+| 2 | `api/logs.py` 补充 | `GET /jobs/{id}/logs/stream` SSE 日志流 | 40 行 |
+| 3 | `api/webhook.py` 加固 | 签名校验、去重、仓库白名单 | 30 行 |
+| 4 | `static/dashboard.html` | ECharts 实时曲线 + 日志 + 心跳 | 250 行 |
+| 5 | `static/index.html` 增强 | 跳转详情页、调用 `GET /jobs` | 20 行 |
 
-### 3.2 Agent 新增
-
-| 步骤 | 文件 | 功能 | 代码量 |
-|:---|:---|:---|:---|
-| 1 | `log_monitor.py` | 基于文件偏移量增量读取日志 | 40 行 |
-| 2 | `metrics_reader.py` | 解析 metrics.jsonl 新增行 | 40 行 |
-| 3 | `agent.py` 补充 | 集成日志监控和指标读取到主循环 | 30 行 |
-
-### 3.3 训练脚本示例
+### 3.2 示例与训练适配
 
 | 步骤 | 文件 | 功能 | 代码量 |
 |:---|:---|:---|:---|
-| 1 | `examples/train_mock.py` | 模拟训练脚本，写 metrics.jsonl + 保存模型 | 50 行 |
+| 1 | `examples/train_mock.py` | 模拟训练，写 metrics.jsonl + 模型 | 60 行 |
+| 2 | `agi_origin` 仓库 | `train_with_metrics.py` 指标输出适配 | 80 行 |
 
-### 3.4 验证方式
+### 3.3 验证方式
 
 ```
 1. git push → GitHub Webhook → 云服务器创建任务
-2. Agent 自动拉取 → 执行 train_mock.py
-3. 浏览器打开 Dashboard → 看到实时 Loss 曲线
+2. Agent 自动拉取 → 执行 train_mock.py（或真实训练）
+3. 浏览器打开 dashboard.html?id={job_id} → 看到实时 Loss 曲线
 4. 训练结束 → 任务状态变为 COMPLETED
 ```
+
+**检查点**: `bash server/test_phase3.sh http://云服务器IP:8000`
 
 ---
 
@@ -256,9 +264,11 @@ NetTrainBridge/
 │   └── stop_agent.sh
 │
 └── plan/                            # 设计文档
-    ├── plan.md
-    ├── agent_design.md
-    └── dev_phases.md                # 本文件
+    ├── plan_1.md                    # 架构蓝图
+    ├── dev_phases.md                # 开发阶段规划（本文件）
+    ├── phase1_server_dev_plan.md    # 阶段一详细计划
+    ├── phase2_agent_dev_plan.md     # 阶段二详细计划
+    └── phase3_dev_plan.md           # 阶段三详细计划
 ```
 
 ---
