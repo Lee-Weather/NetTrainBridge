@@ -73,27 +73,9 @@ function badgeClass(status) {
 
 async function fetchJobs() {
   try {
-    const resp = await fetch(API + '/jobs/pending');
-    const pending = await resp.json();
-
-    // 获取所有非 PENDING 的任务（遍历 pending 的 ID 查单个 + 通过 /jobs/{id} 查最近已知的）
-    // 简化：只展示 pending 列表，非 pending 通过已知 ID 列表补充
-    const allJobs = [...pending];
-
-    // 从 localStorage 读取已知的非 pending 任务 ID
-    const knownIds = JSON.parse(localStorage.getItem('knownJobIds') || '[]');
-    for (const id of knownIds) {
-      if (!allJobs.find(j => j.id === id)) {
-        try {
-          const r = await fetch(API + '/jobs/' + id);
-          if (r.ok) allJobs.push(await r.json());
-        } catch (e) { /* 忽略 */ }
-      }
-    }
-
-    // 更新已知 ID 列表
-    const ids = allJobs.map(j => j.id);
-    localStorage.setItem('knownJobIds', JSON.stringify(ids));
+    const resp = await fetch(API + '/jobs?limit=100');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const allJobs = await resp.json();
 
     // 统计
     const counts = { PENDING: 0, ASSIGNED: 0, RUNNING: 0, COMPLETED: 0, FAILED: 0 };

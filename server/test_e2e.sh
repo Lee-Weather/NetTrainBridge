@@ -46,6 +46,16 @@ R=$(curl -s "$BASE_URL/jobs/pending")
 check "pending 列表包含任务" "$JOB_ID" "$R"
 echo ""
 
+# 3b. 查询任务列表
+echo "--- 3b. 查询任务列表 ---"
+R=$(curl -s "$BASE_URL/jobs")
+check "GET /jobs 包含任务" "$JOB_ID" "$R"
+R=$(curl -s "$BASE_URL/jobs?status=PENDING&limit=10")
+check "GET /jobs?status=PENDING 包含任务" "$JOB_ID" "$R"
+R=$(curl -s "$BASE_URL/jobs?status=COMPLETED&limit=10")
+check "GET /jobs?status=COMPLETED 不含 PENDING 任务" "" "$(echo "$R" | python3 -c "import sys,json; ids=[j['id'] for j in json.load(sys.stdin)]; print('found' if '$JOB_ID' in ids else '')" 2>/dev/null)"
+echo ""
+
 # 4. 查询单个任务
 echo "--- 4. 查询单个任务 ---"
 R=$(curl -s "$BASE_URL/jobs/$JOB_ID")
@@ -98,6 +108,22 @@ check "日志包含 Epoch 2" "Epoch 2" "$R"
 
 R=$(curl -s "$BASE_URL/jobs/$JOB_ID/logs?tail=1")
 check "tail=1 仅返回 1 条" "Epoch 2" "$R"
+echo ""
+
+# 9b. SSE 日志流
+echo "--- 9b. SSE 日志流 ---"
+SSE_OUT=$(mktemp)
+timeout 4 curl -N -s "$BASE_URL/jobs/$JOB_ID/logs/stream" > "$SSE_OUT" &
+SSE_PID=$!
+sleep 1
+curl -s -X POST "$BASE_URL/jobs/$JOB_ID/logs" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "SSE stream test line"}' > /dev/null
+sleep 2
+wait $SSE_PID 2>/dev/null || true
+check "SSE 流可连接" "data:" "$(cat "$SSE_OUT")"
+check "SSE 流包含新日志" "SSE stream test line" "$(cat "$SSE_OUT")"
+rm -f "$SSE_OUT"
 echo ""
 
 # 10. 上报指标

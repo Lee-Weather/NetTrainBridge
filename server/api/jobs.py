@@ -44,6 +44,26 @@ async def list_pending():
         conn.close()
 
 
+@router.get("", response_model=list[JobResponse])
+async def list_jobs(status: Optional[str] = None, limit: int = 100):
+    """返回任务列表，支持 status 过滤和 limit 限制，默认按 create_time DESC。"""
+    conn = database.get_connection()
+    try:
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM jobs WHERE status=? ORDER BY create_time DESC LIMIT ?",
+                (status, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM jobs ORDER BY create_time DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [_row_to_response(r) for r in rows]
+    finally:
+        conn.close()
+
+
 @router.post("", response_model=JobResponse, status_code=201)
 async def create_job(req: JobCreate):
     """创建新任务（手动 curl 或 Webhook 调用）。"""

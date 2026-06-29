@@ -1,7 +1,9 @@
+import asyncio
 from collections import deque
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 
 from config import ServerConfig
 from models import LogMessage, LogResponse
@@ -26,6 +28,31 @@ async def append_logs(job_id: str, req: LogMessage):
     buffer = _get_log_buffer(job_id)
     buffer.append(req.content)
     return {"status": "ok", "lines": len(buffer)}
+
+
+@router.get("/{job_id}/logs/stream")
+async def stream_logs(job_id: str):
+    """SSE 实时推送任务日志（每 1s 检查缓存增量）。"""
+
+    async def event_generator():
+        last_count = 0
+        while True:
+            buffer = _get_log_buffer(job_id)
+            if len(buffer) > last_count:
+                for line in list(buffer)[last_count:]:
+                    yield f"data: {line}\n\n"
+                last_count = len(buffer)
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/{job_id}/logs", response_model=LogResponse)
