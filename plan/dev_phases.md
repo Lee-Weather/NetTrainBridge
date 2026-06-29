@@ -180,14 +180,14 @@ cd agent && python agent.py
 
 | 步骤 | 文件 | 功能 | 代码量 |
 |:---|:---|:---|:---|
-| 1 | `examples/train_mock.py` | 模拟训练，写 metrics.jsonl + 模型 | 60 行 |
+| 1 | `contrib/agi_origin/.../train_with_metrics.py` | agi_origin 指标桥接脚本 | 200 行 |
 | 2 | `agi_origin` 仓库 | `train_with_metrics.py` 指标输出适配 | 80 行 |
 
 ### 3.3 验证方式
 
 ```
 1. git push → GitHub Webhook → 云服务器创建任务
-2. Agent 自动拉取 → 执行 train_mock.py（或真实训练）
+2. Agent 自动拉取 → 执行 train_with_metrics.py（真实训练）
 3. 浏览器打开 dashboard.html?id={job_id} → 看到实时 Loss 曲线
 4. 训练结束 → 任务状态变为 COMPLETED
 ```
@@ -255,8 +255,8 @@ NetTrainBridge/
 │   ├── uploader.py                  # 阶段 4
 │   └── requirements.txt
 │
-├── examples/                        # 示例 (阶段 3)
-│   └── train_mock.py
+├── contrib/agi_origin/                # agi_origin 集成脚本 (阶段 3)
+│   └── humanoid/scripts/train_with_metrics.py
 │
 ├── deploy/                          # 部署脚本 (阶段 4)
 │   ├── agent.service
