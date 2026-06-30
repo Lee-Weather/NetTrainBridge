@@ -7,7 +7,7 @@ name = "nettrainbridge"
 version = "0.1.0"
 description = "Distributed RL training bridge: webhook → cloud server → training agent"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 dependencies = [
     "httpx>=0.28.0",
 ]

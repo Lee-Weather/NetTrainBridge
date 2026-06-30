@@ -14,20 +14,22 @@ python main.py
 # 交互文档: http://localhost:8000/docs
 ```
 
-## CLI 监控（替代 Web Dashboard）
+生成配置：复制 `config.example.json` 到 `~/.nettrainbridge/config.json` 并编辑 `server` 段。
 
-云服务器仅提供 API，无浏览器界面。在仓库根目录安装 CLI 后使用 `ntb` 查看任务与训练进度：
+## CLI 监控（家里电脑）
+
+云服务器仅提供 API。在**家里电脑**安装 CLI 后使用 `ntb` 查看任务与训练进度（云服务器本身**不需要** `pip install -e .`）：
 
 ```bash
 pip install -e ".[dev]"
-export NETTRAINBRIDGE_SERVER_URL=http://云服务器IP:8000   # 或 ntb config init
+ntb config init
 
 ntb jobs                    # 任务列表
 ntb watch <job_id>          # 实时指标 + GPU
 ntb logs <job_id> -f        # 实时日志
 ```
 
-验收：`bash test_cli.sh http://localhost:8000`
+验收（需先 `pip install -e ".[dev]"` 或设置 `NTB=python3 ../cli/ntb.py`）：`bash test_cli.sh http://localhost:8000`
 
 ## 配置
 
@@ -42,7 +44,7 @@ ntb logs <job_id> -f        # 实时日志
 | Webhook 密钥 | `webhook_secret` | `NETTRAINBRIDGE_WEBHOOK_SECRET` |
 | 仓库白名单 | `allowed_repos`（数组） | `NETTRAINBRIDGE_ALLOWED_REPOS`（逗号分隔） |
 
-生成配置：`ntb config init`
+生成配置：`cp ../config.example.json ~/.nettrainbridge/config.json`（或家里电脑 `ntb config init`）
 
 ## API 接口
 
