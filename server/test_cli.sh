@@ -6,7 +6,14 @@
 set -euo pipefail
 
 BASE_URL="${1:-http://127.0.0.1:8000}"
-NTB="${NTB:-python3 $(cd "$(dirname "$0")/.." && pwd)/cli/ntb.py}"
+_REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -z "${NTB:-}" ]; then
+    if command -v ntb >/dev/null 2>&1; then
+        NTB="ntb"
+    else
+        NTB="python3 ${_REPO_ROOT}/cli/ntb.py"
+    fi
+fi
 PASS=0
 FAIL=0
 

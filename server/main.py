@@ -1,5 +1,7 @@
 import logging
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -7,6 +9,11 @@ from fastapi.responses import JSONResponse
 import database
 from api import jobs, webhook, logs, metrics, checkpoint, heartbeat
 from config import ServerConfig
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from config_loader import config_status_message  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,6 +27,7 @@ _config = ServerConfig.load()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时初始化数据库
+    logger.info(config_status_message())
     logger.info("Initializing database at %s", _config.DB_PATH)
     database.init_db()
     logger.info("NetTrainBridge Server started on %s:%s", _config.HOST, _config.PORT)

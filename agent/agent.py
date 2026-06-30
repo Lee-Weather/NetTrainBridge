@@ -415,6 +415,15 @@ async def _run_agent():
 def main():
     setup_logging()
     try:
+        import sys
+        from pathlib import Path
+
+        _root = Path(__file__).resolve().parent.parent
+        if str(_root) not in sys.path:
+            sys.path.insert(0, str(_root))
+        from config_loader import config_status_message  # noqa: E402
+
+        logger.info(config_status_message())
         asyncio.run(_run_agent())
     except KeyboardInterrupt:
         logger.info("Agent 已停止")

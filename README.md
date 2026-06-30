@@ -80,9 +80,12 @@ NetTrainBridge/
 │   ├── test_cli.sh                  # CLI 验收脚本
 │   └── requirements.txt
 │
+├── pyproject.toml                   # pip install -e ".[dev]" → ntb 命令
+├── nettrainbridge_common/           # 共享配置加载
+│   └── config_loader.py
 ├── cli/                             # 命令行客户端 (去 GUI 化 ✅)
-│   ├── ntb.py                       # ntb health / jobs / watch / logs ...
-│   └── requirements.txt
+│   ├── nettrainbridge_cli/          # ntb 包入口
+│   └── ntb.py                       # 向后兼容 shim
 │
 ├── contrib/agi_origin/              # agi_origin 集成脚本 (阶段三 ✅)
 │   └── humanoid/scripts/train_with_metrics.py
@@ -116,25 +119,41 @@ conda activate nettrain   # 云服务器 Python 环境
 cd server
 pip install -r requirements.txt
 
-# 可选：生产环境 Webhook 配置
-export NETTRAINBRIDGE_ALLOWED_REPOS=https://github.com/Lee-Weather/agi_origin.git
-export NETTRAINBRIDGE_WEBHOOK_SECRET=your-secret   # 与 GitHub Webhook Secret 一致
-
 python main.py
+```
+
+**推荐：用配置文件（三端共用一份，不用每次 export）**
+
+```bash
+# 任意机器执行一次（会写入 ~/.nettrainbridge/config.json）
+ntb config init
+
+# 编辑配置文件中的 server 段，例如 webhook_secret、allowed_repos
+# Linux: ~/.nettrainbridge/config.json
+# Windows: C:\Users\你的用户名\.nettrainbridge\config.json
+```
+
+`server` 段示例：
+
+```json
+"server": {
+  "host": "0.0.0.0",
+  "port": 8000,
+  "webhook_secret": "your-secret",
+  "allowed_repos": ["https://github.com/Lee-Weather/agi_origin.git"]
+}
+```
+
+启动后日志会显示 `配置文件: ...`，表示已从文件读取。  
+环境变量仍可覆盖配置文件（可选）。
+
+```bash
 # 服务运行在 http://0.0.0.0:8000
 # API 说明: curl http://localhost:8000/
 
-# 安装 CLI（本机或云服务器均可）
-cd ../cli && pip install -r requirements.txt
-export NETTRAINBRIDGE_SERVER_URL=http://localhost:8000
-
-# 阶段三平台验收（不需真实训练）
+# 验收
 bash test_phase3.sh http://localhost:8000
-
-# CLI 验收
 bash test_cli.sh http://localhost:8000
-
-# 全链路验证
 bash test_e2e.sh http://localhost:8000
 ```
 
@@ -149,13 +168,7 @@ bash test_e2e.sh http://localhost:8000
 | Secret | 与 `NETTRAINBRIDGE_WEBHOOK_SECRET` 一致（可选） |
 | Events | Just the push event |
 
-云服务器建议设置白名单：
-
-```bash
-export NETTRAINBRIDGE_ALLOWED_REPOS=https://github.com/Lee-Weather/agi_origin.git
-```
-
-同一 `commit_sha` 重复 push 会返回 `duplicate`，不会重复建任务。
+云服务器也可在配置文件的 `server.allowed_repos` 中设置白名单（见上文），或使用环境变量。
 
 ### 3. 部署 Agent（公司训练机）
 
@@ -166,26 +179,49 @@ conda activate F1
 cd agent
 pip install -r requirements.txt
 
-# 配置云服务器地址与公司代理
-export NETTRAINBRIDGE_SERVER_URL=http://你的云服务器IP:8000
-export NETTRAINBRIDGE_PROXY=http://10.12.201.122:39000   # 按实际代理修改
-export NETTRAINBRIDGE_WORKSPACE=~/czy/nettrainbridge   # 默认 ~/czy/nettrainbridge，可省略
-export NETTRAINBRIDGE_CONDA_ENV=F1                        # 默认值，可省略
-export NETTRAINBRIDGE_TRAIN_COMMAND="python humanoid/scripts/train_with_metrics.py --task=x1_dh_stand --run_name={job_id} --headless"
-
-# 启动 Agent
+# 首次：生成或编辑 ~/.nettrainbridge/config.json 中的 agent 段
+# 可用: ntb config init（需先在仓库根目录 pip install -e ".[dev]"）
 python agent.py
 ```
+
+`agent` 段示例（与 CLI、Server 可写在同一文件）：
+
+```json
+"agent": {
+  "server_url": "http://47.103.63.175:8000",
+  "proxy": "http://10.12.201.122:39000",
+  "workspace": "~/czy/nettrainbridge",
+  "conda_env": "F1",
+  "train_command": "python humanoid/scripts/train_with_metrics.py --task=x1_dh_stand --run_name={job_id} --headless"
+}
+```
+
+配置好后**直接 `python agent.py`**，无需每次 export 环境变量。
 
 训练和 `pip install` 会通过 `conda run -n F1` 在指定环境中执行，与手动 `conda activate F1` 后运行效果一致。
 
 ### 4. 安装 CLI（在家查看进度）
 
+在仓库根目录执行（推荐，安装后可直接使用 `ntb` 命令）：
+
 ```bash
-cd cli
-pip install -r requirements.txt
-export NETTRAINBRIDGE_SERVER_URL=http://你的云服务器IP:8000
+pip install -e ".[dev]"
 ```
+
+向后兼容：未安装时仍可用 `python cli/ntb.py` 或 `python -m nettrainbridge_cli`。
+
+**一次配置，无需每次 export 环境变量：**
+
+```bash
+# 生成配置文件（Windows / Linux / macOS 通用）
+ntb config init
+
+# Windows 配置文件位置示例：
+# C:\Users\你的用户名\.nettrainbridge\config.json
+```
+
+也可复制仓库根目录的 `config.example.json` 到上述路径后按需修改。  
+环境变量仍可覆盖配置文件（部署时有用）。
 
 ## 使用流程
 
@@ -201,11 +237,11 @@ git add . && git commit -m "tune learning rate" && git push
 # 3. 自动触发训练
 # GitHub Webhook → 云服务器创建任务 → Agent 自动执行
 
-# 4. 终端查看进度
-python cli/ntb.py jobs                              # 任务列表
-python cli/ntb.py job <job_id>                      # 任务详情
-python cli/ntb.py watch <job_id>                    # 实时指标 + GPU（推荐）
-python cli/ntb.py logs <job_id> -f                  # 另开终端：实时日志
+# 4. 终端查看进度（需先 ntb config init 或配置 ~/.nettrainbridge/config.json）
+ntb jobs                              # 任务列表
+ntb job <job_id>                      # 任务详情
+ntb watch <job_id>                    # 实时指标 + GPU（推荐）
+ntb logs <job_id> -f                  # 另开终端：实时日志
 
 # 5. 训练完成后下载模型
 wget http://云服务器IP:8000/jobs/<job_id>/checkpoint/<filename>.pt
@@ -224,7 +260,10 @@ wget http://云服务器IP:8000/jobs/<job_id>/checkpoint/<filename>.pt
 | `ntb logs <id> --tail 50` | 最近 50 行日志 |
 | `ntb logs <id> -f` | SSE 实时日志 |
 
-加 `--json` 输出原始 JSON；`--server URL` 临时指定服务器地址。
+| `ntb config init` | 生成默认配置文件 |
+| `ntb config path` | 查看配置文件路径 |
+
+加 `--json` 输出原始 JSON；`--server URL` 可临时指定服务器（覆盖配置文件）。
 
 ## 服务器 API
 
@@ -264,7 +303,18 @@ wget http://云服务器IP:8000/jobs/<job_id>/checkpoint/<filename>.pt
 
 ## 配置说明
 
-### 云服务器配置
+CLI、Agent、Server **共用一份配置文件**，默认路径：
+
+| 系统 | 路径 |
+|:---|:---|
+| Linux / macOS | `~/.nettrainbridge/config.json` |
+| Windows | `C:\Users\你的用户名\.nettrainbridge\config.json` |
+
+生成模板：`ntb config init`（或复制仓库根目录 `config.example.json`）。
+
+优先级：**环境变量 > 配置文件 > 内置默认值**（日常用配置文件即可；部署时可用环境变量覆盖）。
+
+### 云服务器配置（`server` 段或环境变量）
 
 | 环境变量 | 默认值 | 说明 |
 |:---|:---|:---|
@@ -275,7 +325,7 @@ wget http://云服务器IP:8000/jobs/<job_id>/checkpoint/<filename>.pt
 | `NETTRAINBRIDGE_WEBHOOK_SECRET` | （空） | GitHub Webhook 签名密钥 |
 | `NETTRAINBRIDGE_ALLOWED_REPOS` | （空） | 允许的仓库 URL，逗号分隔 |
 
-### Agent 配置
+### Agent 配置（`agent` 段或环境变量）
 
 | 环境变量 | 默认值 | 说明 |
 |:---|:---|:---|
@@ -373,7 +423,7 @@ log/exported_policies/**/*.pt
 ## 技术栈
 
 - **云服务器**: FastAPI + SQLite + Uvicorn（纯 API，无 Web GUI）
-- **CLI**: Python + httpx（`cli/ntb.py`）
+- **CLI**: Python + httpx（`pip install -e ".[dev]"` → `ntb`）
 - **Agent**: Python 3.8+ + httpx + asyncio
 - **训练环境**: Conda (`F1`, Python 3.8.20) + Isaac Gym + PyTorch
 

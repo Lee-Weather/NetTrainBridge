@@ -16,31 +16,33 @@ python main.py
 
 ## CLI 监控（替代 Web Dashboard）
 
-云服务器仅提供 API，无浏览器界面。使用 `cli/ntb.py` 查看任务与训练进度：
+云服务器仅提供 API，无浏览器界面。在仓库根目录安装 CLI 后使用 `ntb` 查看任务与训练进度：
 
 ```bash
-cd ../cli && pip install -r requirements.txt
-export NETTRAINBRIDGE_SERVER_URL=http://云服务器IP:8000
+pip install -e ".[dev]"
+export NETTRAINBRIDGE_SERVER_URL=http://云服务器IP:8000   # 或 ntb config init
 
-python cli/ntb.py jobs                    # 任务列表
-python cli/ntb.py watch <job_id>          # 实时指标 + GPU
-python cli/ntb.py logs <job_id> -f        # 实时日志
+ntb jobs                    # 任务列表
+ntb watch <job_id>          # 实时指标 + GPU
+ntb logs <job_id> -f        # 实时日志
 ```
 
 验收：`bash test_cli.sh http://localhost:8000`
 
 ## 配置
 
-通过环境变量覆盖默认配置：
+通过 **配置文件** `~/.nettrainbridge/config.json` 的 `server` 段配置，或使用环境变量覆盖。
 
-| 环境变量 | 默认值 | 说明 |
+| 配置项 | 配置文件键 (`server`) | 环境变量 |
 |:---|:---|:---|
-| `NETTRAINBRIDGE_HOST` | 0.0.0.0 | 监听地址 |
-| `NETTRAINBRIDGE_PORT` | 8000 | 监听端口 |
-| `NETTRAINBRIDGE_DB_PATH` | data/server.db | SQLite 数据库路径 |
-| `NETTRAINBRIDGE_DATA_DIR` | data | 数据存储目录 |
-| `NETTRAINBRIDGE_WEBHOOK_SECRET` | （空） | GitHub Webhook 签名密钥，未设置则跳过校验 |
-| `NETTRAINBRIDGE_ALLOWED_REPOS` | （空） | 允许的仓库 URL，逗号分隔；空表示不限制 |
+| 监听地址 | `host` | `NETTRAINBRIDGE_HOST` |
+| 端口 | `port` | `NETTRAINBRIDGE_PORT` |
+| 数据库路径 | `db_path` | `NETTRAINBRIDGE_DB_PATH` |
+| 数据目录 | `data_dir` | `NETTRAINBRIDGE_DATA_DIR` |
+| Webhook 密钥 | `webhook_secret` | `NETTRAINBRIDGE_WEBHOOK_SECRET` |
+| 仓库白名单 | `allowed_repos`（数组） | `NETTRAINBRIDGE_ALLOWED_REPOS`（逗号分隔） |
+
+生成配置：`ntb config init`
 
 ## API 接口
 

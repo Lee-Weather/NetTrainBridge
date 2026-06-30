@@ -1,12 +1,16 @@
-import os
+import sys
+from pathlib import Path
 
-from env_util import get_env
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from config_loader import get_setting, config_status_message  # noqa: E402
 
 
 class ServerConfig:
-    """服务器配置，支持环境变量覆盖。"""
+    """服务器配置：配置文件 → 环境变量 → 默认值。"""
 
-    # 默认值（开发环境用项目内路径，生产环境通过环境变量覆盖）
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     DB_PATH: str = "data/server.db"
@@ -14,39 +18,51 @@ class ServerConfig:
     LOG_MAX_LINES: int = 5000
     CHECKPOINT_UPLOAD_CHUNK: int = 4 * 1024 * 1024  # 4MB 分片
     WEBHOOK_SECRET: str = ""
-    ALLOWED_REPOS: list[str] = []  # 空列表表示不限制仓库
+    ALLOWED_REPOS: list[str] = []
 
     @classmethod
     def load(cls) -> "ServerConfig":
-        """从环境变量加载配置，未设置则使用默认值。"""
         instance = cls()
 
-        host = get_env("NETTRAINBRIDGE_HOST", "GRADMOTION_HOST")
+        host = get_setting("host", env_new="NETTRAINBRIDGE_HOST", env_old="GRADMOTION_HOST", section="server")
         if host:
-            instance.HOST = host
+            instance.HOST = str(host)
 
-        port = get_env("NETTRAINBRIDGE_PORT", "GRADMOTION_PORT")
-        if port:
+        port = get_setting("port", env_new="NETTRAINBRIDGE_PORT", env_old="GRADMOTION_PORT", section="server")
+        if port is not None and port != "":
             instance.PORT = int(port)
 
-        db_path = get_env("NETTRAINBRIDGE_DB_PATH", "GRADMOTION_DB_PATH")
+        db_path = get_setting("db_path", env_new="NETTRAINBRIDGE_DB_PATH", env_old="GRADMOTION_DB_PATH", section="server")
         if db_path:
-            instance.DB_PATH = db_path
+            instance.DB_PATH = str(db_path)
 
-        data_dir = get_env("NETTRAINBRIDGE_DATA_DIR", "GRADMOTION_DATA_DIR")
+        data_dir = get_setting("data_dir", env_new="NETTRAINBRIDGE_DATA_DIR", env_old="GRADMOTION_DATA_DIR", section="server")
         if data_dir:
-            instance.DATA_DIR = data_dir
+            instance.DATA_DIR = str(data_dir)
 
-        webhook_secret = get_env("NETTRAINBRIDGE_WEBHOOK_SECRET", "GRADMOTION_WEBHOOK_SECRET")
+        webhook_secret = get_setting(
+            "webhook_secret",
+            env_new="NETTRAINBRIDGE_WEBHOOK_SECRET",
+            env_old="GRADMOTION_WEBHOOK_SECRET",
+            section="server",
+        )
         if webhook_secret:
-            instance.WEBHOOK_SECRET = webhook_secret
+            instance.WEBHOOK_SECRET = str(webhook_secret)
 
-        allowed_repos = get_env("NETTRAINBRIDGE_ALLOWED_REPOS", "GRADMOTION_ALLOWED_REPOS")
+        allowed_repos = get_setting(
+            "allowed_repos",
+            env_new="NETTRAINBRIDGE_ALLOWED_REPOS",
+            env_old="GRADMOTION_ALLOWED_REPOS",
+            section="server",
+        )
         if allowed_repos:
-            instance.ALLOWED_REPOS = [
-                item.strip()
-                for item in allowed_repos.split(",")
-                if item.strip()
-            ]
+            if isinstance(allowed_repos, list):
+                instance.ALLOWED_REPOS = [str(item).strip() for item in allowed_repos if str(item).strip()]
+            else:
+                instance.ALLOWED_REPOS = [
+                    item.strip()
+                    for item in str(allowed_repos).split(",")
+                    if item.strip()
+                ]
 
         return instance
