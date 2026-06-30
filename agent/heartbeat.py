@@ -8,7 +8,7 @@ from typing import Optional
 from api_client import APIClient, APIError
 from config import AgentConfig
 
-logger = logging.getLogger("gradmotion.agent")
+logger = logging.getLogger("nettrainbridge.agent")
 
 
 @dataclass

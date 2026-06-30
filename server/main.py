@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 import database
 from api import jobs, webhook, logs, metrics, checkpoint, heartbeat
@@ -13,7 +12,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
-logger = logging.getLogger("gradmotion")
+logger = logging.getLogger("nettrainbridge")
 
 _config = ServerConfig.load()
 
@@ -23,12 +22,12 @@ async def lifespan(app: FastAPI):
     # 启动时初始化数据库
     logger.info("Initializing database at %s", _config.DB_PATH)
     database.init_db()
-    logger.info("GradMotion Server started on %s:%s", _config.HOST, _config.PORT)
+    logger.info("NetTrainBridge Server started on %s:%s", _config.HOST, _config.PORT)
     yield
-    logger.info("GradMotion Server shutting down")
+    logger.info("NetTrainBridge Server shutting down")
 
 
-app = FastAPI(title="GradMotion Server", lifespan=lifespan)
+app = FastAPI(title="NetTrainBridge Server", lifespan=lifespan)
 
 # 注册路由
 app.include_router(jobs.router)
@@ -38,8 +37,16 @@ app.include_router(metrics.router)
 app.include_router(checkpoint.router)
 app.include_router(heartbeat.router)
 
-# 静态文件（Dashboard）
-app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+async def root():
+    """API 入口说明（无 Web GUI）。"""
+    return {
+        "name": "NetTrainBridge Server",
+        "docs": "/docs",
+        "health": "/health",
+        "cli": "ntb jobs / ntb watch <job_id>",
+    }
 
 
 @app.get("/health")

@@ -11,7 +11,7 @@ from models import JobCreate
 
 router = APIRouter(tags=["webhook"])
 _config = ServerConfig.load()
-logger = logging.getLogger("gradmotion")
+logger = logging.getLogger("nettrainbridge")
 
 
 def _verify_github_signature(body: bytes, signature_header: str | None) -> bool:

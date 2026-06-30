@@ -54,7 +54,7 @@ class AgentConfig:
     server_url: str = "http://云服务器IP:8000"
     proxy: str = "http://10.12.201.122:39000"  # 公司代理
     poll_interval: int = 30  # 轮询间隔(秒)
-    workspace: str = "/workspace/gradmotion"  # 代码存放目录
+    workspace: str = "/workspace/nettrainbridge"  # 代码存放目录
     agent_id: str = "agent-001"  # Agent 唯一标识
 ```
 
@@ -340,7 +340,7 @@ class AgentConfig:
     server_url: str = "http://云服务器IP:8000"
     proxy: str = ""  # 公司代理地址
     poll_interval: int = 30
-    workspace: str = "/workspace/gradmotion"
+    workspace: str = "/workspace/nettrainbridge"
     agent_id: str = "agent-001"
     heartbeat_interval: int = 30
     log_upload_interval: int = 5
@@ -350,12 +350,12 @@ class AgentConfig:
     def load(cls) -> "AgentConfig":
         instance = cls()
         # 环境变量覆盖
-        if os.environ.get("GRADMOTION_SERVER_URL"):
-            instance.server_url = os.environ["GRADMOTION_SERVER_URL"]
-        if os.environ.get("GRADMOTION_PROXY"):
-            instance.proxy = os.environ["GRADMOTION_PROXY"]
-        if os.environ.get("GRADMOTION_AGENT_ID"):
-            instance.agent_id = os.environ["GRADMOTION_AGENT_ID"]
+        if os.environ.get("NETTRAINBRIDGE_SERVER_URL"):
+            instance.server_url = os.environ["NETTRAINBRIDGE_SERVER_URL"]
+        if os.environ.get("NETTRAINBRIDGE_PROXY"):
+            instance.proxy = os.environ["NETTRAINBRIDGE_PROXY"]
+        if os.environ.get("NETTRAINBRIDGE_AGENT_ID"):
+            instance.agent_id = os.environ["NETTRAINBRIDGE_AGENT_ID"]
         return instance
 ```
 
@@ -472,7 +472,7 @@ python scripts/train.py --task=x1_dh_stand --run_name=<run_name> --headless
 
 Agent 需要适配的启动方式：
 ```bash
-cd /workspace/gradmotion/<job_id>/agi_origin
+cd /workspace/nettrainbridge/<job_id>/agi_origin
 python scripts/train.py --task=x1_dh_stand --run_name=<job_id> --headless
 ```
 

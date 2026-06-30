@@ -1,6 +1,8 @@
 import os
 from dataclasses import dataclass
 
+from env_util import get_env
+
 
 @dataclass
 class AgentConfig:
@@ -20,7 +22,7 @@ class AgentConfig:
     metrics_upload_interval: int = 10
 
     # 工作目录 (默认用户主目录下，避免 /workspace 无写权限)
-    workspace: str = os.path.expanduser("~/czy/gradmotion")
+    workspace: str = os.path.expanduser("~/czy/nettrainbridge")
 
     # Conda 环境 (训练与 pip 安装均在此环境中执行)
     conda_env: str = "F1"
@@ -42,26 +44,25 @@ class AgentConfig:
         """从环境变量加载配置，未设置则使用默认值。"""
         instance = cls()
 
-        _env_map = {
-            "GRADMOTION_SERVER_URL": ("server_url", str),
-            "GRADMOTION_PROXY": ("proxy", str),
-            "GRADMOTION_AGENT_ID": ("agent_id", str),
-            "GRADMOTION_POLL_INTERVAL": ("poll_interval", int),
-            "GRADMOTION_HEARTBEAT_INTERVAL": ("heartbeat_interval", int),
-            "GRADMOTION_LOG_UPLOAD_INTERVAL": ("log_upload_interval", int),
-            "GRADMOTION_METRICS_UPLOAD_INTERVAL": ("metrics_upload_interval", int),
-            "GRADMOTION_WORKSPACE": ("workspace", str),
-            "GRADMOTION_CONDA_ENV": ("conda_env", str),
-            "GRADMOTION_TRAIN_COMMAND": ("train_command", str),
-            "GRADMOTION_REQUEST_TIMEOUT": ("request_timeout", int),
-            "GRADMOTION_MAX_RETRIES": ("max_retries", int),
-        }
+        _env_map = [
+            ("NETTRAINBRIDGE_SERVER_URL", "GRADMOTION_SERVER_URL", "server_url", str),
+            ("NETTRAINBRIDGE_PROXY", "GRADMOTION_PROXY", "proxy", str),
+            ("NETTRAINBRIDGE_AGENT_ID", "GRADMOTION_AGENT_ID", "agent_id", str),
+            ("NETTRAINBRIDGE_POLL_INTERVAL", "GRADMOTION_POLL_INTERVAL", "poll_interval", int),
+            ("NETTRAINBRIDGE_HEARTBEAT_INTERVAL", "GRADMOTION_HEARTBEAT_INTERVAL", "heartbeat_interval", int),
+            ("NETTRAINBRIDGE_LOG_UPLOAD_INTERVAL", "GRADMOTION_LOG_UPLOAD_INTERVAL", "log_upload_interval", int),
+            ("NETTRAINBRIDGE_METRICS_UPLOAD_INTERVAL", "GRADMOTION_METRICS_UPLOAD_INTERVAL", "metrics_upload_interval", int),
+            ("NETTRAINBRIDGE_WORKSPACE", "GRADMOTION_WORKSPACE", "workspace", str),
+            ("NETTRAINBRIDGE_CONDA_ENV", "GRADMOTION_CONDA_ENV", "conda_env", str),
+            ("NETTRAINBRIDGE_TRAIN_COMMAND", "GRADMOTION_TRAIN_COMMAND", "train_command", str),
+            ("NETTRAINBRIDGE_REQUEST_TIMEOUT", "GRADMOTION_REQUEST_TIMEOUT", "request_timeout", int),
+            ("NETTRAINBRIDGE_MAX_RETRIES", "GRADMOTION_MAX_RETRIES", "max_retries", int),
+        ]
 
-        for env_key, (field_name, field_type) in _env_map.items():
-            value = os.environ.get(env_key)
+        for new_key, old_key, field_name, field_type in _env_map:
+            value = get_env(new_key, old_key)
             if value is not None:
                 setattr(instance, field_name, field_type(value))
 
         instance.workspace = os.path.expanduser(instance.workspace)
         return instance
-

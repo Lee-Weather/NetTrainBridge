@@ -1,4 +1,4 @@
-# GradMotion 开发阶段规划
+# NetTrainBridge 开发阶段规划
 
 > 按依赖顺序分 4 个阶段，每个阶段有明确的交付物和验证标准。
 
@@ -151,11 +151,11 @@ cd agent && python agent.py
 
 ---
 
-## 阶段 3: 完整训练流 + Web Dashboard
+## 阶段 3: 完整训练流 + CLI
 
 **前提**: 阶段 2 的 Agent 能启动训练并上报心跳。
 
-> 详细开发计划见 [phase3_dev_plan.md](phase3_dev_plan.md)
+> 详细开发计划见 [phase3_dev_plan.md](phase3_dev_plan.md)。Web Dashboard 已废弃，见 [remove_gui_plan.md](remove_gui_plan.md)。
 
 ### 3.0 阶段二已具备（阶段三直接复用）
 
@@ -164,7 +164,6 @@ cd agent && python agent.py
 | `GET /jobs/{id}/metrics` 指标查询 | ✅ |
 | Agent 日志/指标上报循环 | ✅ |
 | GitHub Webhook 基础接收 | ✅ |
-| 最小任务列表 `index.html` | ✅ |
 
 ### 3.1 云服务器新增
 
@@ -173,8 +172,8 @@ cd agent && python agent.py
 | 1 | `api/jobs.py` 补充 | `GET /jobs` 任务列表 API | 30 行 |
 | 2 | `api/logs.py` 补充 | `GET /jobs/{id}/logs/stream` SSE 日志流 | 40 行 |
 | 3 | `api/webhook.py` 加固 | 签名校验、去重、仓库白名单 | 30 行 |
-| 4 | `static/dashboard.html` | ECharts 实时曲线 + 日志 + 心跳 | 250 行 |
-| 5 | `static/index.html` 增强 | 跳转详情页、调用 `GET /jobs` | 20 行 |
+| 4 | `cli/ntb.py` | 命令行监控（`watch` / `logs` / `metrics`） | 300 行 |
+| 5 | `main.py` | 移除 static，纯 API 服务 | - |
 
 ### 3.2 示例与训练适配
 
@@ -188,11 +187,11 @@ cd agent && python agent.py
 ```
 1. git push → GitHub Webhook → 云服务器创建任务
 2. Agent 自动拉取 → 执行 train_with_metrics.py（真实训练）
-3. 浏览器打开 dashboard.html?id={job_id} → 看到实时 Loss 曲线
+3. ntb watch <job_id> → 终端看到 Loss/Reward 增量
 4. 训练结束 → 任务状态变为 COMPLETED
 ```
 
-**检查点**: `bash server/test_phase3.sh http://云服务器IP:8000`
+**检查点**: `bash server/test_phase3.sh` + `bash server/test_cli.sh`
 
 ### 3.4 阶段三完成标准 ✅
 
@@ -201,11 +200,11 @@ cd agent && python agent.py
 | `GET /jobs` 任务列表 | ✅ |
 | Webhook 签名校验 / 白名单 / commit 去重 | ✅ |
 | SSE 实时日志流 | ✅ |
-| `dashboard.html` ECharts 曲线 + 日志 + 心跳 | ✅ |
+| `ntb watch` 终端监控 | ✅ |
 | `train_with_metrics.py` 部署到 agi_origin | ✅ |
-| `test_phase3.sh` 平台验收 | ✅ |
+| `test_phase3.sh` + `test_cli.sh` 验收 | ✅ |
 
-**完整端到端**（需训练机）：`git push` agi_origin → Agent 真实训练 → Dashboard 曲线更新 → `COMPLETED`
+**完整端到端**（需训练机）：`git push` agi_origin → Agent 真实训练 → `ntb watch` 曲线更新 → `COMPLETED`
 
 ---
 
@@ -222,8 +221,7 @@ cd agent && python agent.py
 | 3 | 云服务器 `auth.py` | API Token 认证中间件 | 30 行 |
 | 4 | Agent `api_client.py` 补充 | 请求带 Token | 5 行 |
 | 5 | Agent `agent.py` 补充 | 崩溃恢复：启动时检查未完成任务 | 30 行 |
-| 6 | Dashboard | 简单登录页 | 30 行 |
-| 7 | 部署脚本 | systemd service 文件 + start/stop 脚本 | - |
+| 6 | 部署脚本 | systemd service 文件 + start/stop 脚本 | - |
 
 ### 4.2 验证方式
 
@@ -254,8 +252,10 @@ NetTrainBridge/
 │   │   ├── logs.py
 │   │   ├── metrics.py
 │   │   └── checkpoint.py
-│   ├── static/
-│   │   └── dashboard.html           # 阶段 3
+│   └── requirements.txt
+│
+├── cli/                             # 命令行客户端
+│   ├── ntb.py
 │   └── requirements.txt
 │
 ├── agent/                           # 公司训练机 (阶段 2 开始)
@@ -281,7 +281,8 @@ NetTrainBridge/
     ├── dev_phases.md                # 开发阶段规划（本文件）
     ├── phase1_server_dev_plan.md    # 阶段一详细计划
     ├── phase2_agent_dev_plan.md     # 阶段二详细计划
-    └── phase3_dev_plan.md           # 阶段三详细计划
+    ├── phase3_dev_plan.md           # 阶段三详细计划
+    └── remove_gui_plan.md           # 去 GUI 化 + CLI 改造
 ```
 
 ---
@@ -292,5 +293,5 @@ NetTrainBridge/
 |:---|:---|
 | **阶段 1** | `curl` 能完成：创建任务 → 查询任务 → 抢占任务 → 上报指标/日志 → 更新状态 |
 | **阶段 2** | Agent 启动后能自动：轮询 → 抢占 → clone 代码 → 启动模拟训练 → 心跳上报 → 标记完成 |
-| **阶段 3** | `git push` → Webhook 触发 → Agent 自动训练 → Dashboard 实时看曲线 → 训练结束状态正确 |
+| **阶段 3** | `git push` → Webhook 触发 → Agent 自动训练 → `ntb watch` 看指标 → 训练结束状态正确 |
 | **阶段 4** | 模型上传下载完整 + Token 认证生效 + Agent 崩溃恢复 + 断网重连 |

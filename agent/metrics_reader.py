@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 
-logger = logging.getLogger("gradmotion.agent")
+logger = logging.getLogger("nettrainbridge.agent")
 
 # 与云服务器 MetricCreate 对齐的字段
 _METRIC_FIELDS = ("step", "loss", "reward", "lr")

@@ -8,7 +8,7 @@ import httpx
 
 from config import AgentConfig
 
-logger = logging.getLogger("gradmotion.agent")
+logger = logging.getLogger("nettrainbridge.agent")
 
 
 class APIError(Exception):

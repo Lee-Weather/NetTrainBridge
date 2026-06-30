@@ -1,4 +1,4 @@
-# GradMotion Agent dependencies
+# NetTrainBridge Agent dependencies
 # Requires: Python 3.8+ (tested with 3.8.20, conda env F1)
 #
 # Version upper bounds prevent pulling packages that dropped Python 3.8 support.

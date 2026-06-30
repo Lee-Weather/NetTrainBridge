@@ -1,5 +1,5 @@
 #!/bin/bash
-# GradMotion 阶段三验收脚本（平台 API，不需真实训练）
+# NetTrainBridge 阶段三验收脚本（平台 API，不需真实训练）
 # 使用方法: bash test_phase3.sh [BASE_URL]
 
 BASE_URL="${1:-http://localhost:8000}"
@@ -20,7 +20,7 @@ check() {
     fi
 }
 
-echo "=== GradMotion 阶段三验收 ==="
+echo "=== NetTrainBridge 阶段三验收 ==="
 echo "目标: $BASE_URL"
 echo ""
 
@@ -103,12 +103,15 @@ else
 fi
 echo ""
 
-# 5. Dashboard 静态页
-echo "--- 5. Dashboard 静态页 ---"
+# 5. 无 GUI（static 已移除）
+echo "--- 5. API 根路径 / 无 static ---"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/static/dashboard.html")
-check "dashboard.html 可访问" "200" "$CODE"
+check "dashboard.html 返回 404" "404" "$CODE"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/static/index.html")
-check "index.html 可访问" "200" "$CODE"
+check "index.html 返回 404" "404" "$CODE"
+R=$(curl -s "$BASE_URL/")
+check "GET / 返回 200" "NetTrainBridge" "$R"
+check "根路径含 CLI 提示" "ntb watch" "$R"
 echo ""
 
 echo "================================"
@@ -119,7 +122,7 @@ if [ $FAIL -eq 0 ]; then
     echo "完整端到端（需训练机）:"
     echo "  1. agi_origin git push → Webhook 建任务"
     echo "  2. Agent 执行 train_with_metrics.py"
-    echo "  3. 打开 $BASE_URL/static/dashboard.html?id={job_id}"
+    echo "  3. python cli/ntb.py watch {job_id}  # 终端监控"
     exit 0
 else
     echo "存在失败项，请检查！"

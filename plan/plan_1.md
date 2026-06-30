@@ -1,8 +1,8 @@
-好的，经过前面所有讨论，我们终于敲定了 **GradMotion 最终版架构**。现在我把所有碎片拼成一张完整的蓝图，让你一眼看清全貌。
+好的，经过前面所有讨论，我们终于敲定了 **NetTrainBridge 最终版架构**。现在我把所有碎片拼成一张完整的蓝图，让你一眼看清全貌。
 
 ---
 
-# GradMotion 最终架构蓝图
+# NetTrainBridge 最终架构蓝图
 
 ## 一、全景拓扑图
 
@@ -13,7 +13,7 @@
 │  │  你的电脑 (Client)                                              │      │
 │  │  • 写代码 (train.py, config.yaml)                               │      │
 │  │  • git push 到 GitHub                                           │      │
-│  │  • 浏览器打开 http://云服务器IP:8000/dashboard 看曲线           │      │
+│  │  • 终端 ntb watch 查看训练曲线                                  │      │
 │  │  • wget 下载最终模型                                            │      │
 │  └──────────────────────────────────────────────────────────────────┘      │
 └───────────────────────────────┬─────────────────────────────────────────────┘
@@ -25,8 +25,8 @@
 │  ┌──────────────────────────────────────────────────────────────────┐      │
 │  │  FastAPI Server (端口 8000)                                    │      │
 │  │  • SQLite 数据库: 任务状态、Loss指标、日志缓存                  │      │
-│  │  • 本地磁盘 (/data/gradmotion/): 存放最终模型 + 日志归档       │      │
-│  │  • Web Dashboard: 展示实时曲线                                  │      │
+│  │  • 本地磁盘 (/data/nettrainbridge/): 存放最终模型 + 日志归档       │      │
+│  │  • 纯 REST API + CLI (ntb)                                      │      │
 │  └──────────────────────────────────────────────────────────────────┘      │
 └───────────────────────────────┬─────────────────────────────────────────────┘
                                 │ HTTPS (云服务器主动请求 Webhook)
@@ -112,10 +112,10 @@
 
 ### Phase 4: 保存模型 (两种策略)
 11. **中间 Checkpoint (留公司)**：训练脚本每 1000 步保存 `model_1000.pt` 到公司本地 `/data/checkpoints/123/`。Agent 不处理，纯本地保存。
-12. **最终模型 (传云端)**：训练结束，Agent 找出 best_model.pt，通过 `POST /jobs/123/checkpoint` 上传到云服务器的 `/data/gradmotion/123/best_model.pt`。
+12. **最终模型 (传云端)**：训练结束，Agent 找出 best_model.pt，通过 `POST /jobs/123/checkpoint` 上传到云服务器的 `/data/nettrainbridge/123/best_model.pt`。
 
 ### Phase 5: 你在家观测与下载
-13. 打开浏览器访问 `http://云服务器IP:8000/dashboard/123`，看到实时更新的 Loss 曲线。
+13. 终端执行 `ntb watch <job_id>`，看到实时更新的 Loss/Reward 指标。
 14. 执行 `curl http://云服务器IP:8000/jobs/123/logs` 看最新日志。
 15. 训练结束后，点击网页上的“下载最终模型”，或执行 `wget http://云服务器IP:8000/jobs/123/checkpoint/best_model.pt`，直接存到你桌面。
 
@@ -164,12 +164,12 @@ git add .
 git commit -m "try lr=1e-4"
 git push
 # 此时 GitHub Webhook 自动通知云服务器，训练自动开始
-# 你不需要再执行任何 gradmotion submit 命令
+# 你不需要再执行任何 nettrainbridge submit 命令
 ```
 
 ### 第3步：打开浏览器看进度
 ```text
-收藏夹 -> http://云服务器IP:8000/dashboard
+收藏夹 -> ntb watch <job_id>
 看到 Job 123 状态: Running (GPU: 85%, 已跑 2h)
 Loss 曲线实时刷新
 ```
@@ -213,4 +213,4 @@ wget http://云服务器IP:8000/jobs/123/checkpoint/best_model.pt
 5. **配置 GitHub Webhook**：Settings -> Webhooks -> 填 `http://云服务器IP:8000/webhook/github`。
 6. **写一个极简 Web 页面**：用 ECharts 渲染曲线，绑定到 FastAPI 的路由上。
 
-这份架构图就是你的 **GradMotion 终极设计蓝图**，照着它落地，你的“在家推送训练”梦想就彻底实现了。如果对其中任何一个组件（比如 Webhook 接收、Agent 抢锁、流式上传）需要参考代码，我随时可以贴出来。🚀
+这份架构图就是你的 **NetTrainBridge 终极设计蓝图**，照着它落地，你的“在家推送训练”梦想就彻底实现了。如果对其中任何一个组件（比如 Webhook 接收、Agent 抢锁、流式上传）需要参考代码，我随时可以贴出来。🚀

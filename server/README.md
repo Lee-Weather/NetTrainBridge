@@ -1,27 +1,33 @@
-# GradMotion Server
+# NetTrainBridge Server
 
 云服务器端 FastAPI 服务，负责任务调度、指标上报、日志接收和模型上传。
 
 ## 快速启动
 
 ```bash
-conda activate F1
+conda activate nettrain
 cd server
 pip install -r requirements.txt
 python main.py
 # 服务运行在 http://0.0.0.0:8000
-# Dashboard: http://localhost:8000/static/index.html
-# 任务详情: http://localhost:8000/static/dashboard.html?id={job_id}
+# API 说明: curl http://localhost:8000/
+# 交互文档: http://localhost:8000/docs
 ```
 
-## Web Dashboard
+## CLI 监控（替代 Web Dashboard）
 
-浏览器打开 `http://云服务器IP:8000/static/index.html` 查看：
+云服务器仅提供 API，无浏览器界面。使用 `cli/ntb.py` 查看任务与训练进度：
 
-- 任务状态统计卡片（PENDING / RUNNING / COMPLETED / FAILED）
-- 任务列表（ID、状态、仓库、Commit、Agent、创建时间）
-- 每 10 秒自动刷新
-- 下载模型链接
+```bash
+cd ../cli && pip install -r requirements.txt
+export NETTRAINBRIDGE_SERVER_URL=http://云服务器IP:8000
+
+python cli/ntb.py jobs                    # 任务列表
+python cli/ntb.py watch <job_id>          # 实时指标 + GPU
+python cli/ntb.py logs <job_id> -f        # 实时日志
+```
+
+验收：`bash test_cli.sh http://localhost:8000`
 
 ## 配置
 
@@ -29,14 +35,24 @@ python main.py
 
 | 环境变量 | 默认值 | 说明 |
 |:---|:---|:---|
-| `GRADMOTION_HOST` | 0.0.0.0 | 监听地址 |
-| `GRADMOTION_PORT` | 8000 | 监听端口 |
-| `GRADMOTION_DB_PATH` | data/server.db | SQLite 数据库路径 |
-| `GRADMOTION_DATA_DIR` | data | 数据存储目录 |
-| `GRADMOTION_WEBHOOK_SECRET` | （空） | GitHub Webhook 签名密钥，未设置则跳过校验 |
-| `GRADMOTION_ALLOWED_REPOS` | （空） | 允许的仓库 URL，逗号分隔；空表示不限制 |
+| `NETTRAINBRIDGE_HOST` | 0.0.0.0 | 监听地址 |
+| `NETTRAINBRIDGE_PORT` | 8000 | 监听端口 |
+| `NETTRAINBRIDGE_DB_PATH` | data/server.db | SQLite 数据库路径 |
+| `NETTRAINBRIDGE_DATA_DIR` | data | 数据存储目录 |
+| `NETTRAINBRIDGE_WEBHOOK_SECRET` | （空） | GitHub Webhook 签名密钥，未设置则跳过校验 |
+| `NETTRAINBRIDGE_ALLOWED_REPOS` | （空） | 允许的仓库 URL，逗号分隔；空表示不限制 |
 
 ## API 接口
+
+### 根路径
+
+```
+GET /
+```
+
+响应：`{"name":"NetTrainBridge Server","docs":"/docs","health":"/health","cli":"ntb jobs / ntb watch <job_id>"}`
+
+---
 
 ### 健康检查
 
@@ -134,8 +150,8 @@ X-GitHub-Event: push
 
 自动从 payload 提取 `repo_url` 和 `commit_sha`，创建训练任务。
 
-- 配置 `GRADMOTION_WEBHOOK_SECRET` 后校验 `X-Hub-Signature-256`
-- 配置 `GRADMOTION_ALLOWED_REPOS` 后仅处理白名单仓库（如 `https://github.com/Lee-Weather/agi_origin.git`）
+- 配置 `NETTRAINBRIDGE_WEBHOOK_SECRET` 后校验 `X-Hub-Signature-256`
+- 配置 `NETTRAINBRIDGE_ALLOWED_REPOS` 后仅处理白名单仓库（如 `https://github.com/Lee-Weather/agi_origin.git`）
 - 同一 `repo_url` + `commit_sha` 重复 push 返回 `{"status":"duplicate","job_id":"..."}`
 
 **GitHub 配置**（[agi_origin](https://github.com/Lee-Weather/agi_origin) → Settings → Webhooks）:
@@ -144,7 +160,7 @@ X-GitHub-Event: push
 |:---|:---|
 | Payload URL | `http://<云服务器IP>:8000/webhook/github` |
 | Content type | `application/json` |
-| Secret | 与 `GRADMOTION_WEBHOOK_SECRET` 一致（可选） |
+| Secret | 与 `NETTRAINBRIDGE_WEBHOOK_SECRET` 一致（可选） |
 | Events | Just the push event |
 
 ---
@@ -295,21 +311,23 @@ SQLite，启动时自动建表。
 
 ```
 server/
-├── main.py              # 应用入口
+├── main.py              # 应用入口（纯 API，无 static）
 ├── config.py            # 配置管理
+├── env_util.py          # 环境变量读取（NETTRAINBRIDGE_*）
 ├── database.py          # 数据库初始化
 ├── models.py            # Pydantic 数据模型
 ├── requirements.txt     # Python 依赖
 ├── test_e2e.sh          # 全链路验证脚本
+├── test_phase3.sh       # 阶段三验收脚本
+├── test_cli.sh          # CLI 验收脚本
 ├── api/
 │   ├── __init__.py
 │   ├── jobs.py          # 任务 CRUD + 抢占
 │   ├── webhook.py       # GitHub Webhook
-│   ├── logs.py          # 日志上报/查询
+│   ├── logs.py          # 日志上报/查询/SSE
 │   ├── metrics.py       # 指标上报/查询
+│   ├── heartbeat.py     # GPU 心跳
 │   └── checkpoint.py    # 模型分片上传/下载
-├── static/
-│   └── index.html       # Web Dashboard
 └── data/
     └── server.db        # SQLite 数据库
 ```
@@ -322,8 +340,14 @@ server/
 # 全链路验证（需先启动服务）
 bash test_e2e.sh
 
+# 阶段三 API 验收
+bash test_phase3.sh http://localhost:8000
+
+# CLI 验收
+bash test_cli.sh http://localhost:8000
+
 # 或指定服务器地址
 bash test_e2e.sh http://your-server:8000
 ```
 
-测试覆盖 23 个检查项：健康检查、任务 CRUD、抢占、状态更新、日志、指标、模型上传下载、Webhook。
+测试覆盖：健康检查、任务 CRUD、Webhook、日志、指标、SSE、模型上传下载、CLI（`ntb`）。

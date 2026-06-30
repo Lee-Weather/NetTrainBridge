@@ -1,14 +1,14 @@
-# GradMotion
+# NetTrainBridge
 
 在家推送代码，公司训练机自动训练，云端查看进度。
 
 ## 项目简介
 
-GradMotion 是一个分布式强化学习训练任务管理系统，让你可以：
+NetTrainBridge 是一个分布式强化学习训练任务管理系统，让你可以：
 
 - 在家里用 `git push` 提交训练代码
 - 公司内网训练机自动拉取并执行训练
-- 通过 Web Dashboard 查看任务状态和训练进度
+- 通过命令行 `ntb` 查看任务状态、训练指标和日志
 - 训练完成后从云端下载模型
 
 **核心优势**：无需内网穿透、无需 SSH、全程 GitOps 驱动。
@@ -21,7 +21,7 @@ GradMotion 是一个分布式强化学习训练任务管理系统，让你可以
 │  ┌──────────────────────────────────────────────────────────────────┐      │
 │  │  你的电脑 (Client)                                                │      │
 │  │  • 写代码、git push 到 GitHub                                     │      │
-│  │  • 浏览器打开 Dashboard 查看任务                                  │      │
+│  │  • 终端 ntb watch 查看训练进度                                    │      │
 │  │  • wget 下载最终模型                                              │      │
 │  └──────────────────────────────────────────────────────────────────┘      │
 └───────────────────────────────┬─────────────────────────────────────────────┘
@@ -33,7 +33,7 @@ GradMotion 是一个分布式强化学习训练任务管理系统，让你可以
 │  │  FastAPI Server (端口 8000)                                       │      │
 │  │  • SQLite: 任务状态、训练指标                                     │      │
 │  │  • 本地磁盘: 模型文件                                             │      │
-│  │  • Web Dashboard: 任务列表、详情曲线、实时日志                  │      │
+│  │  • 纯 REST API（无 Web GUI）                                      │      │
 │  └──────────────────────────────────────────────────────────────────┘      │
 └───────────────────────────────┬─────────────────────────────────────────────┘
                                 │ Webhook
@@ -75,11 +75,13 @@ NetTrainBridge/
 │   │   ├── logs.py                  # 日志上报/查询
 │   │   ├── metrics.py               # 指标上报/查询
 │   │   └── checkpoint.py            # 模型上传/下载
-│   ├── static/
-│   │   ├── index.html               # 任务列表
-│   │   └── dashboard.html           # 任务详情（曲线 + SSE 日志）
 │   ├── test_e2e.sh                  # 全链路验证脚本
 │   ├── test_phase3.sh               # 阶段三验收脚本
+│   ├── test_cli.sh                  # CLI 验收脚本
+│   └── requirements.txt
+│
+├── cli/                             # 命令行客户端 (去 GUI 化 ✅)
+│   ├── ntb.py                       # ntb health / jobs / watch / logs ...
 │   └── requirements.txt
 │
 ├── contrib/agi_origin/              # agi_origin 集成脚本 (阶段三 ✅)
@@ -115,16 +117,22 @@ cd server
 pip install -r requirements.txt
 
 # 可选：生产环境 Webhook 配置
-export GRADMOTION_ALLOWED_REPOS=https://github.com/Lee-Weather/agi_origin.git
-export GRADMOTION_WEBHOOK_SECRET=your-secret   # 与 GitHub Webhook Secret 一致
+export NETTRAINBRIDGE_ALLOWED_REPOS=https://github.com/Lee-Weather/agi_origin.git
+export NETTRAINBRIDGE_WEBHOOK_SECRET=your-secret   # 与 GitHub Webhook Secret 一致
 
 python main.py
 # 服务运行在 http://0.0.0.0:8000
-# 任务列表: http://localhost:8000/static/index.html
-# 任务详情: http://localhost:8000/static/dashboard.html?id={job_id}
+# API 说明: curl http://localhost:8000/
+
+# 安装 CLI（本机或云服务器均可）
+cd ../cli && pip install -r requirements.txt
+export NETTRAINBRIDGE_SERVER_URL=http://localhost:8000
 
 # 阶段三平台验收（不需真实训练）
 bash test_phase3.sh http://localhost:8000
+
+# CLI 验收
+bash test_cli.sh http://localhost:8000
 
 # 全链路验证
 bash test_e2e.sh http://localhost:8000
@@ -138,13 +146,13 @@ bash test_e2e.sh http://localhost:8000
 |:---|:---|
 | Payload URL | `http://你的云服务器IP:8000/webhook/github` |
 | Content type | `application/json` |
-| Secret | 与 `GRADMOTION_WEBHOOK_SECRET` 一致（可选） |
+| Secret | 与 `NETTRAINBRIDGE_WEBHOOK_SECRET` 一致（可选） |
 | Events | Just the push event |
 
 云服务器建议设置白名单：
 
 ```bash
-export GRADMOTION_ALLOWED_REPOS=https://github.com/Lee-Weather/agi_origin.git
+export NETTRAINBRIDGE_ALLOWED_REPOS=https://github.com/Lee-Weather/agi_origin.git
 ```
 
 同一 `commit_sha` 重复 push 会返回 `duplicate`，不会重复建任务。
@@ -159,17 +167,25 @@ cd agent
 pip install -r requirements.txt
 
 # 配置云服务器地址与公司代理
-export GRADMOTION_SERVER_URL=http://你的云服务器IP:8000
-export GRADMOTION_PROXY=http://10.12.201.122:39000   # 按实际代理修改
-export GRADMOTION_WORKSPACE=~/czy/gradmotion   # 默认 ~/czy/gradmotion，可省略
-export GRADMOTION_CONDA_ENV=F1                        # 默认值，可省略
-export GRADMOTION_TRAIN_COMMAND="python humanoid/scripts/train_with_metrics.py --task=x1_dh_stand --run_name={job_id} --headless"
+export NETTRAINBRIDGE_SERVER_URL=http://你的云服务器IP:8000
+export NETTRAINBRIDGE_PROXY=http://10.12.201.122:39000   # 按实际代理修改
+export NETTRAINBRIDGE_WORKSPACE=~/czy/nettrainbridge   # 默认 ~/czy/nettrainbridge，可省略
+export NETTRAINBRIDGE_CONDA_ENV=F1                        # 默认值，可省略
+export NETTRAINBRIDGE_TRAIN_COMMAND="python humanoid/scripts/train_with_metrics.py --task=x1_dh_stand --run_name={job_id} --headless"
 
 # 启动 Agent
 python agent.py
 ```
 
 训练和 `pip install` 会通过 `conda run -n F1` 在指定环境中执行，与手动 `conda activate F1` 后运行效果一致。
+
+### 4. 安装 CLI（在家查看进度）
+
+```bash
+cd cli
+pip install -r requirements.txt
+export NETTRAINBRIDGE_SERVER_URL=http://你的云服务器IP:8000
+```
 
 ## 使用流程
 
@@ -185,13 +201,30 @@ git add . && git commit -m "tune learning rate" && git push
 # 3. 自动触发训练
 # GitHub Webhook → 云服务器创建任务 → Agent 自动执行
 
-# 4. 打开浏览器查看进度
-open http://云服务器IP:8000/static/index.html
-open http://云服务器IP:8000/static/dashboard.html?id={job_id}
+# 4. 终端查看进度
+python cli/ntb.py jobs                              # 任务列表
+python cli/ntb.py job <job_id>                      # 任务详情
+python cli/ntb.py watch <job_id>                    # 实时指标 + GPU（推荐）
+python cli/ntb.py logs <job_id> -f                  # 另开终端：实时日志
 
 # 5. 训练完成后下载模型
-wget http://云服务器IP:8000/jobs/{job_id}/checkpoint/{filename}.pt
+wget http://云服务器IP:8000/jobs/<job_id>/checkpoint/<filename>.pt
 ```
+
+## CLI 命令速查
+
+| 命令 | 说明 |
+|:---|:---|
+| `ntb health` | 服务器健康检查 |
+| `ntb jobs` | 任务列表 |
+| `ntb job <id>` | 任务详情 |
+| `ntb watch <id>` | 综合监控（Loss/Reward/GPU，每 5s） |
+| `ntb metrics <id>` | 指标表格 |
+| `ntb heartbeat <id>` | 最新 GPU 心跳 |
+| `ntb logs <id> --tail 50` | 最近 50 行日志 |
+| `ntb logs <id> -f` | SSE 实时日志 |
+
+加 `--json` 输出原始 JSON；`--server URL` 临时指定服务器地址。
 
 ## 服务器 API
 
@@ -235,29 +268,29 @@ wget http://云服务器IP:8000/jobs/{job_id}/checkpoint/{filename}.pt
 
 | 环境变量 | 默认值 | 说明 |
 |:---|:---|:---|
-| `GRADMOTION_HOST` | 0.0.0.0 | 监听地址 |
-| `GRADMOTION_PORT` | 8000 | 监听端口 |
-| `GRADMOTION_DB_PATH` | data/server.db | SQLite 数据库路径 |
-| `GRADMOTION_DATA_DIR` | data | 数据存储目录 |
-| `GRADMOTION_WEBHOOK_SECRET` | （空） | GitHub Webhook 签名密钥 |
-| `GRADMOTION_ALLOWED_REPOS` | （空） | 允许的仓库 URL，逗号分隔 |
+| `NETTRAINBRIDGE_HOST` | 0.0.0.0 | 监听地址 |
+| `NETTRAINBRIDGE_PORT` | 8000 | 监听端口 |
+| `NETTRAINBRIDGE_DB_PATH` | data/server.db | SQLite 数据库路径 |
+| `NETTRAINBRIDGE_DATA_DIR` | data | 数据存储目录 |
+| `NETTRAINBRIDGE_WEBHOOK_SECRET` | （空） | GitHub Webhook 签名密钥 |
+| `NETTRAINBRIDGE_ALLOWED_REPOS` | （空） | 允许的仓库 URL，逗号分隔 |
 
 ### Agent 配置
 
 | 环境变量 | 默认值 | 说明 |
 |:---|:---|:---|
-| `GRADMOTION_SERVER_URL` | http://localhost:8000 | 云服务器地址 |
-| `GRADMOTION_PROXY` | 空 | 公司 HTTP 代理，如 `http://10.12.201.122:39000` |
-| `GRADMOTION_AGENT_ID` | agent-001 | Agent 唯一标识 |
-| `GRADMOTION_POLL_INTERVAL` | 30 | 任务轮询间隔（秒） |
-| `GRADMOTION_HEARTBEAT_INTERVAL` | 30 | 心跳上报间隔（秒） |
-| `GRADMOTION_LOG_UPLOAD_INTERVAL` | 5 | 日志上报间隔（秒） |
-| `GRADMOTION_METRICS_UPLOAD_INTERVAL` | 10 | 指标上报间隔（秒） |
-| `GRADMOTION_WORKSPACE` | ~/czy/gradmotion | 任务工作目录（clone 代码存放位置） |
-| `GRADMOTION_CONDA_ENV` | F1 | 训练用 Conda 环境名，空则使用系统 Python |
-| `GRADMOTION_TRAIN_COMMAND` | 见下方 | 训练启动命令模板 |
-| `GRADMOTION_REQUEST_TIMEOUT` | 30 | HTTP 请求超时（秒） |
-| `GRADMOTION_MAX_RETRIES` | 3 | 网络请求最大重试次数 |
+| `NETTRAINBRIDGE_SERVER_URL` | http://localhost:8000 | 云服务器地址 |
+| `NETTRAINBRIDGE_PROXY` | 空 | 公司 HTTP 代理，如 `http://10.12.201.122:39000` |
+| `NETTRAINBRIDGE_AGENT_ID` | agent-001 | Agent 唯一标识 |
+| `NETTRAINBRIDGE_POLL_INTERVAL` | 30 | 任务轮询间隔（秒） |
+| `NETTRAINBRIDGE_HEARTBEAT_INTERVAL` | 30 | 心跳上报间隔（秒） |
+| `NETTRAINBRIDGE_LOG_UPLOAD_INTERVAL` | 5 | 日志上报间隔（秒） |
+| `NETTRAINBRIDGE_METRICS_UPLOAD_INTERVAL` | 10 | 指标上报间隔（秒） |
+| `NETTRAINBRIDGE_WORKSPACE` | ~/czy/nettrainbridge | 任务工作目录（clone 代码存放位置） |
+| `NETTRAINBRIDGE_CONDA_ENV` | F1 | 训练用 Conda 环境名，空则使用系统 Python |
+| `NETTRAINBRIDGE_TRAIN_COMMAND` | 见下方 | 训练启动命令模板 |
+| `NETTRAINBRIDGE_REQUEST_TIMEOUT` | 30 | HTTP 请求超时（秒） |
+| `NETTRAINBRIDGE_MAX_RETRIES` | 3 | 网络请求最大重试次数 |
 
 默认训练命令（阶段三，使用 `train_with_metrics.py` 写入 metrics.jsonl）：
 
@@ -311,9 +344,9 @@ log/exported_policies/**/*.pt
 
 | 阶段 | 内容 | 状态 |
 |:---|:---|:---|
-| 阶段一 | 云服务器 API + 最小 Dashboard | ✅ 完成 |
+| 阶段一 | 云服务器 API | ✅ 完成 |
 | 阶段二 | Agent 基础版 | ✅ 完成 |
-| 阶段三 | 完整训练流 + Dashboard 曲线 | ✅ 完成 |
+| 阶段三 | 完整训练流 + CLI (`ntb`) | ✅ 完成 |
 | 阶段四 | 容错 + Token 认证 + 部署脚本 | 待开发 |
 
 ### 阶段二细分进度
@@ -339,14 +372,16 @@ log/exported_policies/**/*.pt
 
 ## 技术栈
 
-- **云服务器**: FastAPI + SQLite + Uvicorn
+- **云服务器**: FastAPI + SQLite + Uvicorn（纯 API，无 Web GUI）
+- **CLI**: Python + httpx（`cli/ntb.py`）
 - **Agent**: Python 3.8+ + httpx + asyncio
 - **训练环境**: Conda (`F1`, Python 3.8.20) + Isaac Gym + PyTorch
 
 ## 参考资料
 
+- [去 GUI 化改造计划](plan/remove_gui_plan.md)
 - [架构蓝图](plan/plan_1.md)
 - [开发阶段规划](plan/dev_phases.md)
 - [阶段一服务器开发计划](plan/phase1_server_dev_plan.md)
 - [阶段二 Agent 开发计划](plan/phase2_agent_dev_plan.md)
-- [阶段三 Dashboard 开发计划](plan/phase3_dev_plan.md)
+- [阶段三训练流开发计划](plan/phase3_dev_plan.md)（Dashboard 已废弃，见 remove_gui_plan.md）

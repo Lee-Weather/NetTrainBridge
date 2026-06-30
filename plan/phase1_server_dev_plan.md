@@ -89,7 +89,7 @@ server/
 - 内存字典 key=job_id -> deque(maxlen=5000)
 
 ### 模型存储
-- 目录: `/data/gradmotion/{job_id}/best_model.pt`
+- 目录: `/data/nettrainbridge/{job_id}/best_model.pt`
 
 ## 5. API 清单
 ### 任务接口

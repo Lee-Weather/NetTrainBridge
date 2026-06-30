@@ -16,7 +16,7 @@ from job_runner import JobRunner, JobRunnerError
 from log_monitor import LogMonitor
 from metrics_reader import MetricsReader
 
-logger = logging.getLogger("gradmotion.agent")
+logger = logging.getLogger("nettrainbridge.agent")
 
 
 async def _run_in_thread(func, *args, **kwargs):
@@ -39,7 +39,7 @@ class RunningJob:
 
 
 class Agent:
-    """GradMotion Agent 主程序。"""
+    """NetTrainBridge Agent 主程序。"""
 
     def __init__(self, config: AgentConfig):
         self.config = config
@@ -62,8 +62,8 @@ class Agent:
         except OSError as e:
             logger.error(
                 "工作目录不可用: %s (%s)。"
-                "若曾 export GRADMOTION_WORKSPACE，请先 unset 或改为可写路径，"
-                "例如: export GRADMOTION_WORKSPACE=~/czy/gradmotion",
+                "若曾 export NETTRAINBRIDGE_WORKSPACE，请先 unset 或改为可写路径，"
+                "例如: export NETTRAINBRIDGE_WORKSPACE=~/czy/nettrainbridge",
                 workspace, e,
             )
             raise

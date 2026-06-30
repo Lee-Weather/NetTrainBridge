@@ -1,5 +1,5 @@
 #!/bin/bash
-# GradMotion Server 全链路验证脚本
+# NetTrainBridge Server 全链路验证脚本
 # 使用方法: bash test_e2e.sh [BASE_URL]
 
 BASE_URL="${1:-http://localhost:8000}"
@@ -19,7 +19,7 @@ check() {
     fi
 }
 
-echo "=== GradMotion Server 全链路验证 ==="
+echo "=== NetTrainBridge Server 全链路验证 ==="
 echo "目标: $BASE_URL"
 echo ""
 
@@ -206,10 +206,12 @@ R=$(curl -s -X POST "$BASE_URL/webhook/github" \
 check "Webhook duplicate" "duplicate" "$R"
 echo ""
 
-# 15c. Dashboard 详情页
-echo "--- 15c. Dashboard 详情页 ---"
+# 15c. 无 GUI 静态页
+echo "--- 15c. 无 GUI 静态页 ---"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/static/dashboard.html")
-check "dashboard.html 可访问" "200" "$CODE"
+check "dashboard.html 返回 404" "404" "$CODE"
+R=$(curl -s "$BASE_URL/")
+check "GET / API 说明" "NetTrainBridge" "$R"
 echo ""
 
 # 清理

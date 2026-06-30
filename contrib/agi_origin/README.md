@@ -1,65 +1,35 @@
-# agi_origin GradMotion 集成文件
+# agi_origin NetTrainBridge 集成文件
 
-将本目录内容复制到 [Lee-Weather/agi_origin](https://github.com/Lee-Weather/agi_origin) 仓库对应路径后 push。
+将 `humanoid/scripts/train_with_metrics.py` 推送到 [agi_origin](https://github.com/Lee-Weather/agi_origin) 仓库，使训练日志自动写入 `metrics.jsonl`，供 Agent 上报。
 
-## 文件
-
-| 文件 | 目标路径 |
-|:---|:---|
-| `humanoid/scripts/train_with_metrics.py` | `agi_origin/humanoid/scripts/train_with_metrics.py` |
-
-## 部署
+## 部署到 agi_origin
 
 ```bash
-git clone https://github.com/Lee-Weather/agi_origin.git
-cd agi_origin
-
-# 从 NetTrainBridge 复制
+# 在 agi_origin 仓库根目录
 cp /path/to/NetTrainBridge/contrib/agi_origin/humanoid/scripts/train_with_metrics.py \
    humanoid/scripts/train_with_metrics.py
 
 git add humanoid/scripts/train_with_metrics.py
-git commit -m "add train_with_metrics for GradMotion"
+git commit -m "add train_with_metrics for NetTrainBridge"
 git push
 ```
 
-## 训练机 Agent 配置
+## Agent 配置
 
 ```bash
-export GRADMOTION_SERVER_URL=http://<云服务器IP>:8000
-export GRADMOTION_TRAIN_COMMAND="python humanoid/scripts/train_with_metrics.py --task=x1_dh_stand --run_name={job_id} --headless"
+export NETTRAINBRIDGE_SERVER_URL=http://<云服务器IP>:8000
+export NETTRAINBRIDGE_TRAIN_COMMAND="python humanoid/scripts/train_with_metrics.py --task=x1_dh_stand --run_name={job_id} --headless"
 ```
 
-Agent 会自动注入 `GRADMOTION_METRICS_FILE={job_dir}/metrics.jsonl`。
+Agent 会自动注入 `NETTRAINBRIDGE_METRICS_FILE={job_dir}/metrics.jsonl`。
 
-## 本地验证
+> 仍支持已弃用的 `GRADMOTION_*` 环境变量（一个版本后移除）。
+
+## 本地测试
 
 ```bash
-# 1. 解析器自测（无需 Isaac Gym）
+cd agi_origin
+export NETTRAINBRIDGE_METRICS_FILE=/tmp/metrics.jsonl
+export NETTRAINBRIDGE_JOB_ID=local-test
 python humanoid/scripts/train_with_metrics.py --self-test
-
-# 2. 真实训练（需 F1 + Isaac Gym）
-conda activate F1
-pip install -e .
-export GRADMOTION_METRICS_FILE=/tmp/metrics.jsonl
-export GRADMOTION_JOB_ID=local-test
-
-python humanoid/scripts/train_with_metrics.py \
-  --task=x1_dh_stand --run_name=local-test --headless --max_iterations=10
-
-cat /tmp/metrics.jsonl
-```
-
-## 指标格式
-
-从 `dh_on_policy_runner.py` 日志解析：
-
-- `step` ← `Learning iteration N/...`
-- `reward` ← `Mean reward:`
-- `loss` ← `Value function loss` 与 `Surrogate loss` 的均值
-
-写入 `metrics.jsonl` 示例：
-
-```json
-{"step": 3, "loss": 0.3456, "reward": 2.5}
 ```

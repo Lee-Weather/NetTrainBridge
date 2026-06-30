@@ -9,7 +9,7 @@ from typing import Optional
 
 from config import AgentConfig
 
-logger = logging.getLogger("gradmotion.agent")
+logger = logging.getLogger("nettrainbridge.agent")
 
 
 class JobRunnerError(Exception):
@@ -158,8 +158,8 @@ class JobRunner:
 
         # 启动子进程
         env = self._get_git_env()
-        env["GRADMOTION_JOB_ID"] = job_id
-        env["GRADMOTION_METRICS_FILE"] = str(metrics_file)
+        env["NETTRAINBRIDGE_JOB_ID"] = job_id
+        env["NETTRAINBRIDGE_METRICS_FILE"] = str(metrics_file)
 
         with open(log_file, "w") as f:
             process = subprocess.Popen(

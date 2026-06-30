@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""包装 humanoid/scripts/train.py，将训练日志解析为 GradMotion metrics.jsonl。"""
+"""包装 humanoid/scripts/train.py，将训练日志解析为 NetTrainBridge metrics.jsonl。"""
 
 from __future__ import annotations
 
@@ -130,11 +130,17 @@ class MetricParser:
         return record
 
 
+def _metrics_file_env() -> str | None:
+    return os.environ.get("NETTRAINBRIDGE_METRICS_FILE") or os.environ.get(
+        "GRADMOTION_METRICS_FILE"
+    )
+
+
 def run_train_with_metrics(argv: list[str] | None = None) -> int:
-    metrics_env = os.environ.get("GRADMOTION_METRICS_FILE")
+    metrics_env = _metrics_file_env()
     if not metrics_env:
         print(
-            "[train_with_metrics] ERROR: GRADMOTION_METRICS_FILE not set",
+            "[train_with_metrics] ERROR: NETTRAINBRIDGE_METRICS_FILE not set",
             file=sys.stderr,
             flush=True,
         )
