@@ -12,6 +12,8 @@ class ServerConfig:
     DATA_DIR: str = "data"
     LOG_MAX_LINES: int = 5000
     CHECKPOINT_UPLOAD_CHUNK: int = 4 * 1024 * 1024  # 4MB 分片
+    WEBHOOK_SECRET: str = ""
+    ALLOWED_REPOS: list[str] = []  # 空列表表示不限制仓库
 
     @classmethod
     def load(cls) -> "ServerConfig":
@@ -25,4 +27,12 @@ class ServerConfig:
             instance.DB_PATH = os.environ["GRADMOTION_DB_PATH"]
         if os.environ.get("GRADMOTION_DATA_DIR"):
             instance.DATA_DIR = os.environ["GRADMOTION_DATA_DIR"]
+        if os.environ.get("GRADMOTION_WEBHOOK_SECRET"):
+            instance.WEBHOOK_SECRET = os.environ["GRADMOTION_WEBHOOK_SECRET"]
+        if os.environ.get("GRADMOTION_ALLOWED_REPOS"):
+            instance.ALLOWED_REPOS = [
+                item.strip()
+                for item in os.environ["GRADMOTION_ALLOWED_REPOS"].split(",")
+                if item.strip()
+            ]
         return instance

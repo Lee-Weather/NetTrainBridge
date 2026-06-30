@@ -189,11 +189,27 @@ echo ""
 
 # 15. GitHub Webhook
 echo "--- 15. GitHub Webhook ---"
+WEBHOOK_SHA="e2e_webhook_$(date +%s)"
 R=$(curl -s -X POST "$BASE_URL/webhook/github" \
   -H "X-GitHub-Event: push" \
   -H "Content-Type: application/json" \
-  -d '{"repository": {"clone_url": "https://github.com/test/webhook"}, "after": "cafe1234", "ref": "refs/heads/main"}')
+  -d "{\"repository\": {\"clone_url\": \"https://github.com/test/webhook\"}, \"after\": \"$WEBHOOK_SHA\", \"ref\": \"refs/heads/main\"}")
 check "Webhook accepted" "accepted" "$R"
+echo ""
+
+# 15b. Webhook 去重
+echo "--- 15b. Webhook 去重 ---"
+R=$(curl -s -X POST "$BASE_URL/webhook/github" \
+  -H "X-GitHub-Event: push" \
+  -H "Content-Type: application/json" \
+  -d "{\"repository\": {\"clone_url\": \"https://github.com/test/webhook\"}, \"after\": \"$WEBHOOK_SHA\", \"ref\": \"refs/heads/main\"}")
+check "Webhook duplicate" "duplicate" "$R"
+echo ""
+
+# 15c. Dashboard 详情页
+echo "--- 15c. Dashboard 详情页 ---"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/static/dashboard.html")
+check "dashboard.html 可访问" "200" "$CODE"
 echo ""
 
 # 清理

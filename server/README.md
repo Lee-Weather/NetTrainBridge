@@ -11,6 +11,7 @@ pip install -r requirements.txt
 python main.py
 # 服务运行在 http://0.0.0.0:8000
 # Dashboard: http://localhost:8000/static/index.html
+# 任务详情: http://localhost:8000/static/dashboard.html?id={job_id}
 ```
 
 ## Web Dashboard
@@ -32,6 +33,8 @@ python main.py
 | `GRADMOTION_PORT` | 8000 | 监听端口 |
 | `GRADMOTION_DB_PATH` | data/server.db | SQLite 数据库路径 |
 | `GRADMOTION_DATA_DIR` | data | 数据存储目录 |
+| `GRADMOTION_WEBHOOK_SECRET` | （空） | GitHub Webhook 签名密钥，未设置则跳过校验 |
+| `GRADMOTION_ALLOWED_REPOS` | （空） | 允许的仓库 URL，逗号分隔；空表示不限制 |
 
 ## API 接口
 
@@ -130,6 +133,19 @@ X-GitHub-Event: push
 ```
 
 自动从 payload 提取 `repo_url` 和 `commit_sha`，创建训练任务。
+
+- 配置 `GRADMOTION_WEBHOOK_SECRET` 后校验 `X-Hub-Signature-256`
+- 配置 `GRADMOTION_ALLOWED_REPOS` 后仅处理白名单仓库（如 `https://github.com/Lee-Weather/agi_origin.git`）
+- 同一 `repo_url` + `commit_sha` 重复 push 返回 `{"status":"duplicate","job_id":"..."}`
+
+**GitHub 配置**（[agi_origin](https://github.com/Lee-Weather/agi_origin) → Settings → Webhooks）:
+
+| 配置项 | 值 |
+|:---|:---|
+| Payload URL | `http://<云服务器IP>:8000/webhook/github` |
+| Content type | `application/json` |
+| Secret | 与 `GRADMOTION_WEBHOOK_SECRET` 一致（可选） |
+| Events | Just the push event |
 
 ---
 

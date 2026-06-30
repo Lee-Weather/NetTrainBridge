@@ -33,7 +33,7 @@ GradMotion 是一个分布式强化学习训练任务管理系统，让你可以
 │  │  FastAPI Server (端口 8000)                                       │      │
 │  │  • SQLite: 任务状态、训练指标                                     │      │
 │  │  • 本地磁盘: 模型文件                                             │      │
-│  │  • Web Dashboard: 任务列表与状态统计                              │      │
+│  │  • Web Dashboard: 任务列表、详情曲线、实时日志                  │      │
 │  └──────────────────────────────────────────────────────────────────┘      │
 └───────────────────────────────┬─────────────────────────────────────────────┘
                                 │ Webhook
@@ -75,11 +75,17 @@ NetTrainBridge/
 │   │   ├── logs.py                  # 日志上报/查询
 │   │   ├── metrics.py               # 指标上报/查询
 │   │   └── checkpoint.py            # 模型上传/下载
-│   ├── static/index.html            # Web Dashboard
+│   ├── static/
+│   │   ├── index.html               # 任务列表
+│   │   └── dashboard.html           # 任务详情（曲线 + SSE 日志）
 │   ├── test_e2e.sh                  # 全链路验证脚本
+│   ├── test_phase3.sh               # 阶段三验收脚本
 │   └── requirements.txt
 │
-├── agent/                           # 公司训练机 (阶段二 🚧)
+├── contrib/agi_origin/              # agi_origin 集成脚本 (阶段三 ✅)
+│   └── humanoid/scripts/train_with_metrics.py
+│
+├── agent/                           # 公司训练机 (阶段二 ✅)
 │   ├── config.py                    # Agent 配置 (含 conda 环境)
 │   ├── api_client.py                # 云服务器 HTTP 客户端
 │   ├── job_runner.py                # clone / 安装依赖 / 启动训练
@@ -104,25 +110,44 @@ NetTrainBridge/
 ### 1. 部署云服务器
 
 ```bash
+conda activate nettrain   # 云服务器 Python 环境
 cd server
 pip install -r requirements.txt
 
-# 启动服务
+# 可选：生产环境 Webhook 配置
+export GRADMOTION_ALLOWED_REPOS=https://github.com/Lee-Weather/agi_origin.git
+export GRADMOTION_WEBHOOK_SECRET=your-secret   # 与 GitHub Webhook Secret 一致
+
 python main.py
 # 服务运行在 http://0.0.0.0:8000
-# Dashboard: http://localhost:8000/static/index.html
+# 任务列表: http://localhost:8000/static/index.html
+# 任务详情: http://localhost:8000/static/dashboard.html?id={job_id}
 
-# 可选：全链路验证
+# 阶段三平台验收（不需真实训练）
+bash test_phase3.sh http://localhost:8000
+
+# 全链路验证
 bash test_e2e.sh http://localhost:8000
 ```
 
 ### 2. 配置 GitHub Webhook
 
-在 GitHub 仓库设置中添加 Webhook：
+在 [agi_origin](https://github.com/Lee-Weather/agi_origin) 仓库 Settings → Webhooks 添加：
 
-- **URL**: `http://你的云服务器IP:8000/webhook/github`
-- **Content type**: `application/json`
-- **Events**: `Just the push event`
+| 配置项 | 值 |
+|:---|:---|
+| Payload URL | `http://你的云服务器IP:8000/webhook/github` |
+| Content type | `application/json` |
+| Secret | 与 `GRADMOTION_WEBHOOK_SECRET` 一致（可选） |
+| Events | Just the push event |
+
+云服务器建议设置白名单：
+
+```bash
+export GRADMOTION_ALLOWED_REPOS=https://github.com/Lee-Weather/agi_origin.git
+```
+
+同一 `commit_sha` 重复 push 会返回 `duplicate`，不会重复建任务。
 
 ### 3. 部署 Agent（公司训练机）
 
@@ -138,6 +163,7 @@ export GRADMOTION_SERVER_URL=http://你的云服务器IP:8000
 export GRADMOTION_PROXY=http://10.12.201.122:39000   # 按实际代理修改
 export GRADMOTION_WORKSPACE=~/czy/gradmotion   # 默认 ~/czy/gradmotion，可省略
 export GRADMOTION_CONDA_ENV=F1                        # 默认值，可省略
+export GRADMOTION_TRAIN_COMMAND="python humanoid/scripts/train_with_metrics.py --task=x1_dh_stand --run_name={job_id} --headless"
 
 # 启动 Agent
 python agent.py
@@ -161,6 +187,7 @@ git add . && git commit -m "tune learning rate" && git push
 
 # 4. 打开浏览器查看进度
 open http://云服务器IP:8000/static/index.html
+open http://云服务器IP:8000/static/dashboard.html?id={job_id}
 
 # 5. 训练完成后下载模型
 wget http://云服务器IP:8000/jobs/{job_id}/checkpoint/{filename}.pt
@@ -174,6 +201,7 @@ wget http://云服务器IP:8000/jobs/{job_id}/checkpoint/{filename}.pt
 |:---|:---|:---|
 | `GET` | `/health` | 健康检查 |
 | `POST` | `/jobs` | 创建任务 |
+| `GET` | `/jobs` | 任务列表（支持 `?status=&limit=`） |
 | `GET` | `/jobs/pending` | 查询待处理任务 |
 | `GET` | `/jobs/{id}` | 查询单个任务 |
 | `PUT` | `/jobs/{id}/claim` | Agent 抢占任务 |
@@ -185,6 +213,7 @@ wget http://云服务器IP:8000/jobs/{job_id}/checkpoint/{filename}.pt
 |:---|:---|:---|
 | `POST` | `/jobs/{id}/logs` | 上报训练日志 |
 | `GET` | `/jobs/{id}/logs` | 查询日志（支持 `?tail=N`） |
+| `GET` | `/jobs/{id}/logs/stream` | SSE 实时日志流 |
 | `POST` | `/jobs/{id}/metrics` | 上报训练指标 |
 | `GET` | `/jobs/{id}/metrics` | 查询指标（支持 `?since_step=N`） |
 | `POST` | `/jobs/{id}/heartbeat` | 上报心跳（GPU 状态） |
@@ -210,6 +239,8 @@ wget http://云服务器IP:8000/jobs/{job_id}/checkpoint/{filename}.pt
 | `GRADMOTION_PORT` | 8000 | 监听端口 |
 | `GRADMOTION_DB_PATH` | data/server.db | SQLite 数据库路径 |
 | `GRADMOTION_DATA_DIR` | data | 数据存储目录 |
+| `GRADMOTION_WEBHOOK_SECRET` | （空） | GitHub Webhook 签名密钥 |
+| `GRADMOTION_ALLOWED_REPOS` | （空） | 允许的仓库 URL，逗号分隔 |
 
 ### Agent 配置
 
@@ -228,11 +259,13 @@ wget http://云服务器IP:8000/jobs/{job_id}/checkpoint/{filename}.pt
 | `GRADMOTION_REQUEST_TIMEOUT` | 30 | HTTP 请求超时（秒） |
 | `GRADMOTION_MAX_RETRIES` | 3 | 网络请求最大重试次数 |
 
-默认训练命令（`{job_id}` 会被替换为任务 ID）：
+默认训练命令（阶段三，使用 `train_with_metrics.py` 写入 metrics.jsonl）：
 
 ```bash
-python humanoid/scripts/train.py --task=x1_dh_stand --run_name={job_id} --headless
+python humanoid/scripts/train_with_metrics.py --task=x1_dh_stand --run_name={job_id} --headless
 ```
+
+脚本位于 [agi_origin](https://github.com/Lee-Weather/agi_origin) 仓库 `humanoid/scripts/train_with_metrics.py`（开发源在 `contrib/agi_origin/`）。
 
 ## 任务状态流转
 
@@ -280,7 +313,7 @@ log/exported_policies/**/*.pt
 |:---|:---|:---|
 | 阶段一 | 云服务器 API + 最小 Dashboard | ✅ 完成 |
 | 阶段二 | Agent 基础版 | ✅ 完成 |
-| 阶段三 | 完整训练流 + Dashboard 曲线 | 待开发 |
+| 阶段三 | 完整训练流 + Dashboard 曲线 | ✅ 完成 |
 | 阶段四 | 容错 + Token 认证 + 部署脚本 | 待开发 |
 
 ### 阶段二细分进度

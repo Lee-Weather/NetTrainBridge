@@ -16,6 +16,14 @@ from models import (
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
+def normalize_repo_url(repo_url: str) -> str:
+    """规范化仓库 URL，便于白名单与去重比较。"""
+    url = repo_url.strip().rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+    return url.lower()
+
+
 def _row_to_response(row) -> JobResponse:
     """将 SQLite Row 转为 Pydantic 响应模型。"""
     return JobResponse(
@@ -67,6 +75,11 @@ async def list_jobs(status: Optional[str] = None, limit: int = 100):
 @router.post("", response_model=JobResponse, status_code=201)
 async def create_job(req: JobCreate):
     """创建新任务（手动 curl 或 Webhook 调用）。"""
+    return create_job_sync(req)
+
+
+def create_job_sync(req: JobCreate) -> JobResponse:
+    """同步创建任务（Webhook 后台任务等场景复用）。"""
     job_id = req.id or uuid.uuid4().hex[:12]
     conn = database.get_connection()
     try:
@@ -77,6 +90,23 @@ async def create_job(req: JobCreate):
         conn.commit()
         row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         return _row_to_response(row)
+    finally:
+        conn.close()
+
+
+def find_job_by_repo_commit(repo_url: str, commit_sha: str) -> Optional[JobResponse]:
+    """按仓库 + commit 查找已有任务（用于 Webhook 去重）。"""
+    target_repo = normalize_repo_url(repo_url)
+    conn = database.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE commit_sha=? ORDER BY create_time DESC",
+            (commit_sha,),
+        ).fetchall()
+        for row in rows:
+            if normalize_repo_url(row["repo_url"]) == target_repo:
+                return _row_to_response(row)
+        return None
     finally:
         conn.close()
 

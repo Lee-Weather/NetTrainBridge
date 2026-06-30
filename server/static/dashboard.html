@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GradMotion - 任务详情</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; min-height: 100vh; }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  .sub { color: #94a3b8; font-size: 13px; margin-bottom: 20px; }
+  .meta-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .meta-card { background: #1e293b; border-radius: 8px; padding: 12px 18px; font-size: 14px; }
+  .meta-card .label { color: #94a3b8; font-size: 12px; margin-bottom: 4px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge-pending { background: #78350f; color: #fbbf24; }
+  .badge-assigned { background: #1e3a5f; color: #60a5fa; }
+  .badge-running { background: #1e3a5f; color: #60a5fa; }
+  .badge-completed { background: #14532d; color: #4ade80; }
+  .badge-failed { background: #7f1d1d; color: #fca5a5; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: #1e293b; border-radius: 8px; padding: 16px; min-height: 360px; display: flex; flex-direction: column; }
+  .panel h2 { font-size: 15px; color: #94a3b8; margin-bottom: 12px; font-weight: 600; }
+  #chart { flex: 1; min-height: 300px; }
+  #log-box { flex: 1; min-height: 300px; max-height: 480px; overflow-y: auto; background: #0f172a; border-radius: 6px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: #cbd5e1; }
+  .actions { margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 8px 16px; border-radius: 6px; font-size: 14px; text-decoration: none; background: #334155; color: #e2e8f0; border: none; cursor: pointer; }
+  .btn:hover { background: #475569; }
+  .btn-primary { background: #2563eb; }
+  .btn-primary:hover { background: #3b82f6; }
+  .error { color: #fca5a5; padding: 24px; text-align: center; }
+  .link { color: #60a5fa; text-decoration: none; }
+  .link:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<h1>GradMotion - 任务详情</h1>
+<div class="sub" id="job-title">加载中...</div>
+
+<div class="meta-bar" id="meta-bar" style="display:none">
+  <div class="meta-card"><div class="label">状态</div><div id="meta-status">--</div></div>
+  <div class="meta-card"><div class="label">Agent</div><div id="meta-agent">--</div></div>
+  <div class="meta-card"><div class="label">GPU 利用率</div><div id="meta-gpu">--</div></div>
+  <div class="meta-card"><div class="label">GPU 显存</div><div id="meta-mem">--</div></div>
+  <div class="meta-card"><div class="label">仓库</div><div id="meta-repo">--</div></div>
+  <div class="meta-card"><div class="label">Commit</div><div id="meta-commit">--</div></div>
+</div>
+
+<div id="error-box" class="error" style="display:none"></div>
+
+<div class="grid" id="main-grid" style="display:none">
+  <div class="panel">
+    <h2>Loss / Reward 曲线 <span style="font-weight:400;font-size:12px">(每 5s 刷新)</span></h2>
+    <div id="chart"></div>
+  </div>
+  <div class="panel">
+    <h2>实时日志 <span style="font-weight:400;font-size:12px">(SSE)</span></h2>
+    <div id="log-box"></div>
+  </div>
+</div>
+
+<div class="actions" id="actions" style="display:none">
+  <a class="btn btn-primary" id="btn-download" href="#" style="display:none">下载模型</a>
+  <a class="btn" href="/static/index.html">返回列表</a>
+</div>
+
+<script>
+const API = '';
+const MAX_CHART_POINTS = 1000;
+
+const params = new URLSearchParams(window.location.search);
+const jobId = params.get('id');
+
+const lossData = [];
+const rewardData = [];
+let lastStep = -1;
+let chart = null;
+let logAutoScroll = true;
+let eventSource = null;
+
+function badgeClass(status) {
+  const map = { PENDING: 'badge-pending', ASSIGNED: 'badge-assigned', RUNNING: 'badge-running', COMPLETED: 'badge-completed', FAILED: 'badge-failed' };
+  return map[status] || '';
+}
+
+function showError(msg) {
+  document.getElementById('error-box').textContent = msg;
+  document.getElementById('error-box').style.display = 'block';
+}
+
+function appendLog(line) {
+  const box = document.getElementById('log-box');
+  box.appendChild(document.createTextNode(line + '\n'));
+  if (logAutoScroll) {
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+function initChart() {
+  chart = echarts.init(document.getElementById('chart'));
+  chart.setOption({
+    backgroundColor: 'transparent',
+    textStyle: { color: '#94a3b8' },
+    legend: { data: ['Loss', 'Reward'], textStyle: { color: '#94a3b8' }, top: 0 },
+    grid: { left: 48, right: 48, top: 40, bottom: 32 },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'value', name: 'Step', nameTextStyle: { color: '#64748b' }, axisLine: { lineStyle: { color: '#334155' } }, splitLine: { lineStyle: { color: '#1e293b' } } },
+    yAxis: [
+      { type: 'value', name: 'Loss', position: 'left', axisLine: { lineStyle: { color: '#334155' } }, splitLine: { lineStyle: { color: '#1e293b' } } },
+      { type: 'value', name: 'Reward', position: 'right', axisLine: { lineStyle: { color: '#334155' } }, splitLine: { show: false } },
+    ],
+    series: [
+      { name: 'Loss', type: 'line', smooth: true, showSymbol: false, data: lossData, itemStyle: { color: '#f59e0b' } },
+      { name: 'Reward', type: 'line', smooth: true, showSymbol: false, yAxisIndex: 1, data: rewardData, itemStyle: { color: '#22c55e' } },
+    ],
+  });
+  window.addEventListener('resize', () => chart && chart.resize());
+}
+
+function trimChartData() {
+  while (lossData.length > MAX_CHART_POINTS) lossData.shift();
+  while (rewardData.length > MAX_CHART_POINTS) rewardData.shift();
+}
+
+function updateChart() {
+  if (!chart) return;
+  chart.setOption({
+    series: [
+      { data: lossData },
+      { data: rewardData },
+    ],
+  });
+}
+
+function mergeMetrics(metrics) {
+  if (!metrics.length) return;
+  for (const m of metrics) {
+    if (m.step <= lastStep) continue;
+    lastStep = m.step;
+    if (m.loss != null) lossData.push([m.step, m.loss]);
+    if (m.reward != null) rewardData.push([m.step, m.reward]);
+  }
+  trimChartData();
+  updateChart();
+}
+
+async function fetchJob() {
+  const resp = await fetch(API + '/jobs/' + jobId);
+  if (!resp.ok) throw new Error('任务不存在或加载失败');
+  const job = await resp.json();
+
+  document.getElementById('job-title').textContent = '任务 ID: ' + job.id;
+  document.getElementById('meta-status').innerHTML = '<span class="badge ' + badgeClass(job.status) + '">' + job.status + '</span>';
+  document.getElementById('meta-agent').textContent = job.agent_id || '--';
+  document.getElementById('meta-repo').innerHTML = '<a class="link" href="' + job.repo_url + '" target="_blank">' + job.repo_url.split('/').slice(-1)[0] + '</a>';
+  document.getElementById('meta-commit').innerHTML = '<code>' + (job.commit_sha || '--').substring(0, 12) + '</code>';
+
+  if (job.status === 'COMPLETED') {
+    const btn = document.getElementById('btn-download');
+    btn.href = API + '/jobs/' + jobId + '/checkpoint/model_1.pt';
+    btn.style.display = 'inline-block';
+  }
+
+  document.getElementById('meta-bar').style.display = 'flex';
+  document.getElementById('main-grid').style.display = 'grid';
+  document.getElementById('actions').style.display = 'flex';
+  return job;
+}
+
+async function fetchHeartbeat() {
+  try {
+    const resp = await fetch(API + '/jobs/' + jobId + '/heartbeat');
+    if (!resp.ok) return;
+    const hb = await resp.json();
+    document.getElementById('meta-gpu').textContent = hb.gpu_util != null ? hb.gpu_util.toFixed(1) + '%' : '--';
+    if (hb.gpu_mem_used != null && hb.gpu_mem_total != null) {
+      const used = (hb.gpu_mem_used / 1024 / 1024 / 1024).toFixed(1);
+      const total = (hb.gpu_mem_total / 1024 / 1024 / 1024).toFixed(1);
+      document.getElementById('meta-mem').textContent = used + ' / ' + total + ' GB';
+    }
+    if (hb.agent_id) {
+      document.getElementById('meta-agent').textContent = hb.agent_id;
+    }
+  } catch (e) { /* 无心跳时忽略 */ }
+}
+
+async function fetchMetricsIncremental() {
+  const url = API + '/jobs/' + jobId + '/metrics?since_step=' + lastStep;
+  const resp = await fetch(url);
+  if (!resp.ok) return;
+  const metrics = await resp.json();
+  mergeMetrics(metrics);
+}
+
+async function loadInitialLogs() {
+  const resp = await fetch(API + '/jobs/' + jobId + '/logs?tail=100');
+  if (!resp.ok) return;
+  const data = await resp.json();
+  document.getElementById('log-box').textContent = '';
+  (data.logs || []).forEach(appendLog);
+}
+
+function startLogStream() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource(API + '/jobs/' + jobId + '/logs/stream');
+  eventSource.onmessage = (ev) => appendLog(ev.data);
+  eventSource.onerror = () => { /* 断线后浏览器会自动重连 */ };
+}
+
+document.getElementById('log-box').addEventListener('scroll', () => {
+  const box = document.getElementById('log-box');
+  logAutoScroll = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+});
+
+async function main() {
+  if (!jobId) {
+    showError('缺少任务 ID，请使用 dashboard.html?id={job_id}');
+    return;
+  }
+
+  try {
+    initChart();
+    await fetchJob();
+    await loadInitialLogs();
+    startLogStream();
+    await fetchMetricsIncremental();
+    await fetchHeartbeat();
+
+    setInterval(fetchMetricsIncremental, 5000);
+    setInterval(fetchHeartbeat, 10000);
+    setInterval(fetchJob, 10000);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+main();
+</script>
+</body>
+</html>

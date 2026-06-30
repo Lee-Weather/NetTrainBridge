@@ -194,6 +194,19 @@ cd agent && python agent.py
 
 **检查点**: `bash server/test_phase3.sh http://云服务器IP:8000`
 
+### 3.4 阶段三完成标准 ✅
+
+| 检查项 | 状态 |
+|:---|:---|
+| `GET /jobs` 任务列表 | ✅ |
+| Webhook 签名校验 / 白名单 / commit 去重 | ✅ |
+| SSE 实时日志流 | ✅ |
+| `dashboard.html` ECharts 曲线 + 日志 + 心跳 | ✅ |
+| `train_with_metrics.py` 部署到 agi_origin | ✅ |
+| `test_phase3.sh` 平台验收 | ✅ |
+
+**完整端到端**（需训练机）：`git push` agi_origin → Agent 真实训练 → Dashboard 曲线更新 → `COMPLETED`
+
 ---
 
 ## 阶段 4: 模型上传 + 容错 + 安全

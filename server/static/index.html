@@ -98,7 +98,11 @@ async function fetchJobs() {
           <td><code>${j.commit_sha.substring(0, 7)}</code></td>
           <td>${j.agent_id || '--'}</td>
           <td>${j.create_time ? new Date(j.create_time).toLocaleString() : '--'}</td>
-          <td><a class="link" href="/jobs/${j.id}/checkpoint/best_model.pt">下载模型</a></td>
+          <td>
+            <a class="link" href="/static/dashboard.html?id=${j.id}">详情</a>
+            &nbsp;|&nbsp;
+            <a class="link" href="/jobs/${j.id}/checkpoint/best_model.pt">模型</a>
+          </td>
         </tr>
       `).join('');
     }

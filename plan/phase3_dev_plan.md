@@ -280,10 +280,10 @@ git push
 
 ---
 
-### Step 6: 组装验收 + 文档更新
+### Step 6: 组装验收 + 文档更新 ✅ 已完成
 
 **产出**:
-- `server/test_phase3.sh` — 平台侧自动化验收（API + SSE + 静态页）
+- `server/test_phase3.sh` — 阶段三自动化验收
 - 更新 `README.md` — Dashboard、Webhook、agi_origin 训练命令说明
 - 更新 `dev_phases.md` — 标记阶段三完成标准
 
@@ -334,7 +334,7 @@ GitHub Webhook ──POST──▶ 云服务器 /webhook/github
 | `GET` | `/jobs/{id}/logs/stream` | SSE 日志流 | ✅ |
 | `GET` | `/jobs/{id}/metrics` | 历史指标 | ✅ |
 | `GET` | `/jobs/{id}/heartbeat` | 最新心跳 | ✅ |
-| `POST` | `/webhook/github` | Push 自动建任务 | 待加固 |
+| `POST` | `/webhook/github` | Push 自动建任务 | ✅ |
 
 ---
 
@@ -421,9 +421,10 @@ git commit --allow-empty -m "gradmotion e2e test" && git push
 | Step 1: GET /jobs | 0.5 天 | ✅ |
 | Step 2: SSE 日志流 | 0.5 天 | ✅ |
 | Step 3: train_with_metrics.py | 1 天 | ✅ |
-| Step 4: Webhook 加固 | 0.5 天 | 待开发 |
-| Step 5: Dashboard 详情页 | 1–1.5 天 | 待开发 |
-| Step 6: 验收 + 文档 | 0.5 天 | 待开发 |
+| Step 4: Webhook 加固 | 0.5 天 | ✅ |
+| Step 5: Dashboard 详情页 | 1–1.5 天 | ✅ |
+| Step 6: 验收 + 文档 | 0.5 天 | ✅ |
+| **阶段三** | | **✅ 完成** |
 | **剩余** | **约 3–3.5 天** | |
 
 ---
