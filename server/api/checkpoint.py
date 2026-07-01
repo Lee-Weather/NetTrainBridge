@@ -5,6 +5,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile
 
 from config import ServerConfig
+import database
+import job_data
 
 router = APIRouter(prefix="/jobs", tags=["checkpoint"])
 
@@ -16,12 +18,89 @@ _upload_sessions: dict[str, dict] = {}
 
 def _job_dir(job_id: str) -> Path:
     """获取任务的数据目录。"""
-    return Path(_config.DATA_DIR) / job_id
+    return job_data.job_dir(job_id)
 
 
 def _temp_dir(job_id: str) -> Path:
     """获取分片上传临时目录。"""
     return _job_dir(job_id) / ".tmp"
+
+
+def _ensure_job_exists(job_id: str) -> None:
+    conn = database.get_connection()
+    try:
+        row = conn.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, f"Job {job_id} not found")
+    finally:
+        conn.close()
+
+
+def _resolve_checkpoint_path(job_id: str, filename: str) -> Path:
+    """models/ 优先，兼容 v0.1 根目录。"""
+    models_path = job_data.models_dir(job_id) / filename
+    if models_path.is_file():
+        return models_path
+    legacy = _job_dir(job_id) / filename
+    if legacy.is_file():
+        return legacy
+    raise HTTPException(404, f"File {filename} not found for job {job_id}")
+
+
+def _list_checkpoint_files(job_id: str) -> list[dict]:
+    """扫描 models/ 与旧版根目录中的 checkpoint 文件。"""
+    seen: set[str] = set()
+    files: list[dict] = []
+    meta = job_data.read_meta(job_id) or {}
+    primary = meta.get("model_filename")
+
+    def _add(path: Path, location: str) -> None:
+        if not path.is_file() or path.name in seen:
+            return
+        seen.add(path.name)
+        files.append(
+            {
+                "filename": path.name,
+                "size": path.stat().st_size,
+                "location": location,
+                "primary": path.name == primary if primary else False,
+            },
+        )
+
+    models = job_data.models_dir(job_id)
+    if models.is_dir():
+        for path in sorted(models.iterdir()):
+            if path.is_file() and not path.name.startswith("."):
+                _add(path, "models")
+    job_root = _job_dir(job_id)
+    if job_root.is_dir():
+        for path in sorted(job_root.iterdir()):
+            if path.is_file() and path.suffix == ".pt":
+                _add(path, "legacy")
+
+    if primary and not any(f["filename"] == primary for f in files):
+        files.insert(
+            0,
+            {
+                "filename": primary,
+                "size": None,
+                "location": "meta",
+                "primary": True,
+            },
+        )
+    return files
+
+
+@router.get("/{job_id}/checkpoint")
+async def list_checkpoints(job_id: str):
+    """列出任务 checkpoint 文件（含 meta.json 中的主模型名）。"""
+    _ensure_job_exists(job_id)
+    meta = job_data.read_meta(job_id)
+    return {
+        "job_id": job_id,
+        "files": _list_checkpoint_files(job_id),
+        "meta": meta,
+    }
 
 
 @router.post("/{job_id}/checkpoint")
@@ -62,7 +141,9 @@ async def upload_chunk(
 
     # 所有分片到齐，合并文件
     if len(session["received"]) >= session["total_chunks"]:
-        final_path = _job_dir(job_id) / filename
+        models = job_data.models_dir(job_id)
+        models.mkdir(parents=True, exist_ok=True)
+        final_path = models / filename
         with open(final_path, "wb") as out:
             for i in range(session["total_chunks"]):
                 part = tmp / f"{filename}.part.{i}"
@@ -88,9 +169,7 @@ async def upload_chunk(
 @router.get("/{job_id}/checkpoint/{filename}")
 async def download_checkpoint(job_id: str, filename: str):
     """下载模型文件。"""
-    file_path = _job_dir(job_id) / filename
-    if not file_path.exists():
-        raise HTTPException(404, f"File {filename} not found for job {job_id}")
+    file_path = _resolve_checkpoint_path(job_id, filename)
 
     from fastapi.responses import FileResponse
     return FileResponse(

@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 import database
-from api import jobs, webhook, logs, metrics, checkpoint, heartbeat
+from api import jobs, webhook, logs, metrics, checkpoint, heartbeat, meta, test_files, artifacts
 from config import ServerConfig
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -42,7 +42,10 @@ app.include_router(jobs.router)
 app.include_router(webhook.router)
 app.include_router(logs.router)
 app.include_router(metrics.router)
+app.include_router(meta.router)
 app.include_router(checkpoint.router)
+app.include_router(test_files.router)
+app.include_router(artifacts.router)
 app.include_router(heartbeat.router)
 
 

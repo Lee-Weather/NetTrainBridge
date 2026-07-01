@@ -171,6 +171,43 @@ class APIClient:
         )
         return response.json()
 
+    # ── 任务元数据 ──
+
+    async def put_job_meta(self, job_id: str, meta: dict) -> dict:
+        """合并写入任务 meta.json。"""
+        response = await self._request(
+            "PUT",
+            f"/jobs/{job_id}/meta",
+            json=meta,
+        )
+        return response.json()
+
+    async def get_job_meta(self, job_id: str) -> dict | None:
+        """读取任务 meta.json；不存在时返回 None。"""
+        client = await self._get_client()
+        try:
+            response = await client.get(f"/jobs/{job_id}/meta")
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise APIError(
+                f"请求失败: GET /jobs/{job_id}/meta -> {e.response.status_code}",
+                status_code=e.response.status_code,
+            ) from e
+
+    async def update_phase(self, job_id: str, phase: str) -> dict:
+        """更新任务阶段（test job 状态机）。"""
+        response = await self._request(
+            "PUT",
+            f"/jobs/{job_id}/phase",
+            json={"phase": phase},
+        )
+        return response.json()
+
     # ── 模型上传接口 ──
 
     async def upload_checkpoint(
@@ -216,3 +253,41 @@ class APIClient:
                 )
 
         return result
+
+    async def download_checkpoint(
+        self,
+        job_id: str,
+        filename: str,
+        dest: Path,
+    ) -> Path:
+        """从 Server 下载模型到本地。"""
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        client = await self._get_client()
+        response = await client.get(f"/jobs/{job_id}/checkpoint/{filename}")
+        if response.status_code == 404:
+            raise APIError(
+                f"checkpoint 不存在: {job_id}/{filename}",
+                status_code=404,
+            )
+        response.raise_for_status()
+        with open(dest, "wb") as f:
+            f.write(response.content)
+        logger.info("已下载 checkpoint: %s -> %s", filename, dest)
+        return dest
+
+    async def upload_test_file(
+        self,
+        job_id: str,
+        file_path: Path,
+        *,
+        dest_name: str | None = None,
+    ) -> dict:
+        """上传测试产物到 Server data/{id}/test/。"""
+        filename = dest_name or file_path.name
+        with open(file_path, "rb") as f:
+            response = await self._request(
+                "POST",
+                f"/jobs/{job_id}/test/{filename}",
+                files={"file": (filename, f, "application/octet-stream")},
+            )
+        return response.json()

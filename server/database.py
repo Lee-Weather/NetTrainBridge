@@ -7,17 +7,30 @@ _config = ServerConfig.load()
 
 _CREATE_JOBS_TABLE = """
 CREATE TABLE IF NOT EXISTS jobs (
-    id          TEXT PRIMARY KEY,
-    status      TEXT DEFAULT 'PENDING',
-    repo_url    TEXT NOT NULL,
-    commit_sha  TEXT NOT NULL,
-    agent_id    TEXT,
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-    start_time  DATETIME,
-    end_time    DATETIME,
-    error_msg   TEXT
+    id                  TEXT PRIMARY KEY,
+    status              TEXT DEFAULT 'PENDING',
+    repo_url            TEXT NOT NULL,
+    commit_sha          TEXT NOT NULL,
+    agent_id            TEXT,
+    create_time         DATETIME DEFAULT CURRENT_TIMESTAMP,
+    start_time          DATETIME,
+    end_time            DATETIME,
+    error_msg           TEXT,
+    job_type            TEXT NOT NULL DEFAULT 'train',
+    train_source        TEXT NOT NULL DEFAULT 'ntb',
+    gm_task_id          TEXT,
+    parent_train_job_id TEXT,
+    phase               TEXT
 );
 """
+
+_JOB_COLUMN_MIGRATIONS: list[tuple[str, str]] = [
+    ("job_type", "TEXT NOT NULL DEFAULT 'train'"),
+    ("train_source", "TEXT NOT NULL DEFAULT 'ntb'"),
+    ("gm_task_id", "TEXT"),
+    ("parent_train_job_id", "TEXT"),
+    ("phase", "TEXT"),
+]
 
 _CREATE_METRICS_TABLE = """
 CREATE TABLE IF NOT EXISTS metrics (
@@ -28,9 +41,14 @@ CREATE TABLE IF NOT EXISTS metrics (
     reward      REAL,
     lr          REAL,
     timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    kind        TEXT NOT NULL DEFAULT 'train',
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 """
+
+_METRICS_COLUMN_MIGRATIONS: list[tuple[str, str]] = [
+    ("kind", "TEXT NOT NULL DEFAULT 'train'"),
+]
 
 _CREATE_HEARTBEATS_TABLE = """
 CREATE TABLE IF NOT EXISTS heartbeats (
@@ -44,6 +62,22 @@ CREATE TABLE IF NOT EXISTS heartbeats (
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 """
+
+
+def _migrate_jobs_table(conn: sqlite3.Connection) -> None:
+    """为已有数据库追加 v0.2 jobs 字段（幂等）。"""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    for name, col_def in _JOB_COLUMN_MIGRATIONS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE jobs ADD COLUMN {name} {col_def}")
+
+
+def _migrate_metrics_table(conn: sqlite3.Connection) -> None:
+    """为已有数据库追加 metrics.kind 字段（幂等）。"""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(metrics)").fetchall()}
+    for name, col_def in _METRICS_COLUMN_MIGRATIONS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE metrics ADD COLUMN {name} {col_def}")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -64,6 +98,8 @@ def init_db() -> None:
         conn.execute(_CREATE_JOBS_TABLE)
         conn.execute(_CREATE_METRICS_TABLE)
         conn.execute(_CREATE_HEARTBEATS_TABLE)
+        _migrate_jobs_table(conn)
+        _migrate_metrics_table(conn)
         conn.commit()
     finally:
         conn.close()

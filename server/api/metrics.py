@@ -20,8 +20,9 @@ async def append_metrics(job_id: str, req: MetricBatchCreate):
 
         for m in req.metrics:
             conn.execute(
-                "INSERT INTO metrics (job_id, step, loss, reward, lr) VALUES (?, ?, ?, ?, ?)",
-                (job_id, m.step, m.loss, m.reward, m.lr),
+                "INSERT INTO metrics (job_id, step, loss, reward, lr, kind) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, m.step, m.loss, m.reward, m.lr, m.kind or "train"),
             )
         conn.commit()
         return {"status": "ok", "count": len(req.metrics)}
@@ -34,6 +35,7 @@ async def get_metrics(
     job_id: str,
     limit: Optional[int] = None,
     since_step: Optional[int] = None,
+    kind: Optional[str] = None,
 ):
     """查询任务指标。
 
@@ -43,12 +45,15 @@ async def get_metrics(
     """
     conn = database.get_connection()
     try:
-        query = "SELECT step, loss, reward, lr, timestamp FROM metrics WHERE job_id=?"
+        query = "SELECT step, loss, reward, lr, kind, timestamp FROM metrics WHERE job_id=?"
         params: list = [job_id]
 
         if since_step is not None:
             query += " AND step > ?"
             params.append(since_step)
+        if kind is not None:
+            query += " AND kind=?"
+            params.append(kind)
 
         query += " ORDER BY step ASC"
 
@@ -63,6 +68,7 @@ async def get_metrics(
                 loss=r["loss"],
                 reward=r["reward"],
                 lr=r["lr"],
+                kind=r["kind"] if "kind" in r.keys() else "train",
                 timestamp=r["timestamp"],
             )
             for r in rows

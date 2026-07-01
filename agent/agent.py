@@ -6,17 +6,25 @@ import logging
 import signal
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from api_client import APIClient, APIError
 from config import AgentConfig
+from fetch_runner import FetchRunner, FetchRunnerError
 from heartbeat import create_heartbeat_reporter
 from job_runner import JobRunner, JobRunnerError
 from log_monitor import LogMonitor
 from metrics_reader import MetricsReader
 
 logger = logging.getLogger("nettrainbridge.agent")
+
+CLAIMABLE_JOB_TYPES = frozenset({"train", "sync", "test"})
+
+
+def _job_type(job: dict) -> str:
+    return job.get("job_type") or "train"
 
 
 async def _run_in_thread(func, *args, **kwargs):
@@ -36,6 +44,7 @@ class RunningJob:
     commit_sha: str
     job_dir: Path
     process: subprocess.Popen
+    is_test: bool = False
 
 
 class Agent:
@@ -45,6 +54,7 @@ class Agent:
         self.config = config
         self.api_client = APIClient(config)
         self.job_runner = JobRunner(config)
+        self.fetch_runner = FetchRunner(config)
         self.heartbeat_reporter = create_heartbeat_reporter(
             self.api_client, config,
         )
@@ -127,9 +137,18 @@ class Agent:
         if not jobs:
             return
 
-        job = jobs[0]
+        job = None
+        for candidate in jobs:
+            if _job_type(candidate) in CLAIMABLE_JOB_TYPES:
+                job = candidate
+                break
+        if job is None:
+            skipped = [_job_type(j) for j in jobs]
+            logger.debug("跳过不可抢占任务类型: %s", skipped)
+            return
+
         job_id = job["id"]
-        logger.info("发现任务 %s, 正在抢占...", job_id)
+        logger.info("发现任务 %s (%s), 正在抢占...", job_id, _job_type(job))
 
         try:
             claimed = await self.api_client.claim_job(job_id)
@@ -139,14 +158,184 @@ class Agent:
                 return
             raise
 
-        logger.info("抢占成功, 开始准备环境...")
+        logger.info("抢占成功, 开始处理...")
         await self._start_job(claimed)
 
     async def _start_job(self, job: dict):
-        """准备环境并启动训练。"""
+        """按 job_type 分发：sync 仅 clone；train 走训练流程。"""
         if self._running_job is not None:
             return
 
+        job_type = _job_type(job)
+        if job_type == "sync":
+            await self._run_sync_job(job)
+            return
+        if job_type == "test":
+            await self._run_test_job(job)
+            return
+        await self._run_train_job(job)
+
+    async def _run_test_job(self, job: dict):
+        """test job：sync → fetch(gm) → Mock sim2sim → COMPLETED。"""
+        job_id = job["id"]
+        repo_url = job["repo_url"]
+        commit_sha = job["commit_sha"]
+        train_source = job.get("train_source") or "ntb"
+        phase = job.get("phase") or "sync"
+        job_dir = Path(self.config.workspace) / job_id
+
+        await self._update_status_safe(job_id, "RUNNING")
+
+        try:
+            if phase == "sync":
+                job_dir = await _run_in_thread(
+                    self.job_runner.prepare, repo_url, commit_sha, job_id,
+                )
+                logger.info("test job %s 代码同步完成", job_id)
+                if train_source == "gm":
+                    updated = await self.api_client.update_phase(job_id, "fetch")
+                    phase = updated.get("phase", "fetch")
+                else:
+                    await self.api_client.update_phase(job_id, "test")
+                    phase = "test"
+
+            if phase == "fetch" and train_source == "gm":
+                gm_task_id = job.get("gm_task_id")
+                if not gm_task_id:
+                    raise FetchRunnerError("test job 缺少 gm_task_id")
+
+                meta = await self.api_client.get_job_meta(job_id) or {}
+                gm_checkpoint = meta.get("gm_checkpoint", "latest")
+                models_dir = job_dir / "fetched_models"
+                model_path = await _run_in_thread(
+                    self.fetch_runner.fetch_checkpoint,
+                    gm_task_id,
+                    gm_checkpoint,
+                    models_dir,
+                )
+                await self.api_client.upload_checkpoint(job_id, model_path)
+                await self.api_client.put_job_meta(
+                    job_id,
+                    {
+                        "model_filename": model_path.name,
+                        "gm_task_id": gm_task_id,
+                        "gm_checkpoint": gm_checkpoint,
+                    },
+                )
+                await self.api_client.update_phase(job_id, "test")
+                phase = "test"
+                logger.info(
+                    "test job %s FETCH 完成，已上传 %s",
+                    job_id,
+                    model_path.name,
+                )
+
+            if phase == "test":
+                if self._running_job is not None:
+                    return
+                if not job_dir.is_dir():
+                    raise JobRunnerError(f"工作目录不存在: {job_dir}")
+                checkpoint_path = await self._resolve_test_checkpoint(job, job_dir)
+                await self._start_test_sim2sim(job, job_dir, checkpoint_path)
+                return
+
+            logger.warning("test job %s 未知阶段 %s", job_id, phase)
+
+        except JobRunnerError as e:
+            logger.error("test job %s 失败: %s", job_id, e)
+            await self._update_status_safe(job_id, "FAILED", error_msg=str(e))
+        except FetchRunnerError as e:
+            logger.error("test job %s FETCH 失败: %s", job_id, e)
+            await self._update_status_safe(
+                job_id, "FAILED", error_msg=f"FETCH failed: {e}",
+            )
+        except APIError as e:
+            logger.error("test job %s API 失败: %s", job_id, e)
+            await self._update_status_safe(
+                job_id, "FAILED", error_msg=f"API error: {e}",
+            )
+
+    async def _resolve_test_checkpoint(self, job: dict, job_dir: Path) -> Path:
+        """解析待测模型路径（gm 本地 / ntb 从父任务下载）。"""
+        train_source = job.get("train_source") or "ntb"
+        if train_source == "gm":
+            models_dir = job_dir / "fetched_models"
+            if models_dir.is_dir():
+                pts = list(models_dir.glob("*.pt"))
+                if pts:
+                    return max(pts, key=lambda p: p.stat().st_mtime)
+            meta = await self.api_client.get_job_meta(job["id"]) or {}
+            filename = meta.get("model_filename")
+            if filename:
+                local = models_dir / filename
+                if local.is_file():
+                    return local
+            raise FetchRunnerError("gm 路径未找到本地 checkpoint")
+
+        parent_id = job.get("parent_train_job_id")
+        if not parent_id:
+            raise FetchRunnerError("ntb test 缺少 parent_train_job_id")
+
+        parent_meta = await self.api_client.get_job_meta(parent_id) or {}
+        filename = parent_meta.get("model_filename") or "best_model.pt"
+        dest_dir = job_dir / "parent_model"
+        return await self.api_client.download_checkpoint(
+            parent_id, filename, dest_dir / filename,
+        )
+
+    async def _start_test_sim2sim(
+        self,
+        job: dict,
+        job_dir: Path,
+        checkpoint_path: Path,
+    ) -> None:
+        """启动 Mock sim2sim 子进程并注册监控。"""
+        job_id = job["id"]
+        process = await _run_in_thread(
+            self.job_runner.start_test,
+            job_dir,
+            job_id,
+            checkpoint_path,
+        )
+        self._log_monitor = LogMonitor(
+            self.job_runner.get_log_file(job_dir, is_test=True),
+        )
+        self._metrics_reader = MetricsReader(
+            self.job_runner.get_metrics_file(job_dir),
+            kind="test",
+        )
+        self._running_job = RunningJob(
+            job_id=job_id,
+            repo_url=job["repo_url"],
+            commit_sha=job["commit_sha"],
+            job_dir=job_dir,
+            process=process,
+            is_test=True,
+        )
+        logger.info("test job %s sim2sim 已启动", job_id)
+
+    async def _run_sync_job(self, job: dict):
+        """仅同步代码到 workspace，不启动训练。"""
+        job_id = job["id"]
+        repo_url = job["repo_url"]
+        commit_sha = job["commit_sha"]
+
+        try:
+            job_dir = await _run_in_thread(
+                self.job_runner.prepare, repo_url, commit_sha, job_id,
+            )
+        except JobRunnerError as e:
+            logger.error("任务 %s 同步失败: %s", job_id, e)
+            await self._update_status_safe(
+                job_id, "FAILED", error_msg=str(e),
+            )
+            return
+
+        await self._update_status_safe(job_id, "COMPLETED")
+        logger.info("代码同步完成: %s -> %s", job_id, job_dir)
+
+    async def _run_train_job(self, job: dict):
+        """准备环境并启动训练。"""
         job_id = job["id"]
         repo_url = job["repo_url"]
         commit_sha = job["commit_sha"]
@@ -189,13 +378,68 @@ class Agent:
             return
 
         exit_code = self._running_job.process.returncode
+        label = "测试" if self._running_job.is_test else "训练"
         logger.info(
-            "训练完成, 任务 %s, exit_code=%s",
-            self._running_job.job_id, exit_code,
+            "%s完成, 任务 %s, exit_code=%s",
+            label, self._running_job.job_id, exit_code,
         )
-        await self._on_training_complete(
-            exit_code if exit_code is not None else 1,
-        )
+        if self._running_job.is_test:
+            await self._on_test_complete(exit_code if exit_code is not None else 1)
+        else:
+            await self._on_training_complete(
+                exit_code if exit_code is not None else 1,
+            )
+
+    async def _on_test_complete(self, exit_code: int):
+        """sim2sim 结束：上报指标、上传 test 产物、COMPLETED。"""
+        job = self._running_job
+        if job is None:
+            return
+
+        await self._flush_logs_and_metrics()
+
+        if exit_code == 0:
+            summary = self.job_runner.get_test_summary_file(job.job_dir)
+            if summary.is_file():
+                try:
+                    await self.api_client.upload_test_file(job.job_id, summary)
+                    logger.info("test summary 已上传: %s", summary.name)
+                except APIError as e:
+                    logger.error("test summary 上传失败: %s", e)
+                    await self._update_status_safe(
+                        job.job_id, "FAILED",
+                        error_msg=f"test summary upload failed: {e}",
+                    )
+                    self._clear_running_job()
+                    return
+
+            metrics_file = self.job_runner.get_metrics_file(job.job_dir)
+            if metrics_file.is_file():
+                try:
+                    await self.api_client.upload_test_file(
+                        job.job_id, metrics_file, dest_name="metrics.jsonl",
+                    )
+                except APIError as e:
+                    logger.warning("test metrics.jsonl 上传失败: %s", e)
+
+            await self.api_client.put_job_meta(
+                job.job_id,
+                {
+                    "job_type": "test",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            await self.api_client.update_phase(job.job_id, "done")
+            await self._update_status_safe(job.job_id, "COMPLETED")
+            logger.info("test job %s 已完成", job.job_id)
+        else:
+            await self._update_status_safe(
+                job.job_id, "FAILED",
+                error_msg=f"Test failed with exit code {exit_code}",
+            )
+            logger.error("test job %s 失败, exit_code=%s", job.job_id, exit_code)
+
+        self._clear_running_job()
 
     async def _on_training_complete(self, exit_code: int):
         """训练结束：上报剩余数据、上传模型、更新状态。"""
@@ -205,14 +449,15 @@ class Agent:
 
         await self._flush_logs_and_metrics()
 
+        model_path: Optional[Path] = None
         if exit_code == 0:
-            model = await _run_in_thread(
+            model_path = await _run_in_thread(
                 self.job_runner.find_best_model, job.job_dir,
             )
-            if model:
+            if model_path:
                 try:
-                    await self.api_client.upload_checkpoint(job.job_id, model)
-                    logger.info("模型上传成功: %s", model.name)
+                    await self.api_client.upload_checkpoint(job.job_id, model_path)
+                    logger.info("模型上传成功: %s", model_path.name)
                 except APIError as e:
                     logger.error("模型上传失败: %s", e)
                     await self._update_status_safe(
@@ -224,6 +469,7 @@ class Agent:
             else:
                 logger.warning("训练成功但未找到模型文件")
 
+            await self._write_train_meta(job, model_path)
             await self._update_status_safe(job.job_id, "COMPLETED")
             logger.info("任务 %s 已完成", job.job_id)
         else:
@@ -234,6 +480,28 @@ class Agent:
             logger.error("任务 %s 失败, exit_code=%s", job.job_id, exit_code)
 
         self._clear_running_job()
+
+    async def _write_train_meta(
+        self,
+        job: RunningJob,
+        model_path: Optional[Path],
+    ) -> None:
+        """训练成功后写入 Server meta.json。"""
+        meta = {
+            "job_id": job.job_id,
+            "job_type": "train",
+            "train_source": "ntb",
+            "repo_url": job.repo_url,
+            "commit_sha": job.commit_sha,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if model_path is not None:
+            meta["model_filename"] = model_path.name
+        try:
+            await self.api_client.put_job_meta(job.job_id, meta)
+            logger.info("任务 %s meta 已写入 Server", job.job_id)
+        except APIError as e:
+            logger.warning("任务 %s meta 写入失败: %s", job.job_id, e)
 
     def _clear_running_job(self):
         """清理当前任务上下文。"""
@@ -326,20 +594,30 @@ class Agent:
                 continue
 
             status = job.get("status")
+            job_type = _job_type(job)
             if status == "ASSIGNED":
                 logger.info("恢复中断的 ASSIGNED 任务: %s", job_id)
                 await self._start_job(job)
                 return
 
+            if status == "RUNNING" and job_type == "test":
+                phase = job.get("phase") or "sync"
+                if phase in ("sync", "fetch", "test"):
+                    logger.info("恢复中断的 test 任务: %s phase=%s", job_id, phase)
+                    await self._run_test_job(job)
+                    return
+
             if status == "RUNNING":
                 logger.warning(
                     "发现中断的 RUNNING 任务 %s, 标记为 FAILED", job_id,
                 )
+                is_test_log = (job_dir / "test" / "test.log").is_file()
                 log_monitor = LogMonitor(
-                    self.job_runner.get_log_file(job_dir),
+                    self.job_runner.get_log_file(job_dir, is_test=is_test_log),
                 )
                 metrics_reader = MetricsReader(
                     self.job_runner.get_metrics_file(job_dir),
+                    kind="test" if is_test_log else "train",
                 )
                 try:
                     content = log_monitor.read_new_content()
@@ -350,10 +628,12 @@ class Agent:
                         await self.api_client.append_metrics(job_id, metrics)
                 except APIError as e:
                     logger.warning("恢复上报失败: %s", e)
-                await self._update_status_safe(
-                    job_id, "FAILED",
-                    error_msg="Agent 重启，训练进程已丢失",
+                err = (
+                    "Agent 重启，测试进程已丢失"
+                    if is_test_log
+                    else "Agent 重启，训练进程已丢失"
                 )
+                await self._update_status_safe(job_id, "FAILED", error_msg=err)
                 return
 
     # ── 工具方法 ──

@@ -145,7 +145,17 @@ class JobRunner:
         """
         # 构建训练命令
         train_cmd = self.config.train_command.format(job_id=job_id)
-        cmd = self._wrap_conda(shlex.split(train_cmd))
+
+        # 指标文件（新旧环境变量名均注入，兼容 agi_origin 各版本）
+        metrics_file = job_dir / "metrics.jsonl"
+        train_env = {
+            "NETTRAINBRIDGE_JOB_ID": job_id,
+            "GRADMOTION_JOB_ID": job_id,
+            "NETTRAINBRIDGE_METRICS_FILE": str(metrics_file),
+            "GRADMOTION_METRICS_FILE": str(metrics_file),
+        }
+
+        cmd = self._wrap_conda(shlex.split(train_cmd), extra_env=train_env)
 
         logger.info("启动训练: %s", shlex.join(cmd))
 
@@ -153,13 +163,9 @@ class JobRunner:
         log_file = job_dir / "train.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # 指标文件
-        metrics_file = job_dir / "metrics.jsonl"
-
         # 启动子进程
         env = self._get_git_env()
-        env["NETTRAINBRIDGE_JOB_ID"] = job_id
-        env["NETTRAINBRIDGE_METRICS_FILE"] = str(metrics_file)
+        env.update(train_env)
 
         with open(log_file, "w") as f:
             process = subprocess.Popen(
@@ -172,6 +178,61 @@ class JobRunner:
 
         logger.info("训练进程已启动, PID=%d, 日志=%s", process.pid, log_file)
         return process
+
+    def start_test(
+        self,
+        job_dir: Path,
+        job_id: str,
+        checkpoint_path: Path,
+    ) -> subprocess.Popen:
+        """启动 sim2sim 测试子进程（Mock 或真实 test_command）。"""
+        test_cmd = self._resolve_test_command(job_dir, checkpoint_path)
+        test_cmd = test_cmd.format(
+            job_id=job_id,
+            checkpoint_path=str(checkpoint_path),
+        )
+
+        metrics_file = job_dir / "metrics.jsonl"
+        test_env = {
+            "NETTRAINBRIDGE_JOB_ID": job_id,
+            "GRADMOTION_JOB_ID": job_id,
+            "NETTRAINBRIDGE_METRICS_FILE": str(metrics_file),
+            "GRADMOTION_METRICS_FILE": str(metrics_file),
+            "NETTRAINBRIDGE_CHECKPOINT_PATH": str(checkpoint_path),
+        }
+
+        cmd = self._wrap_conda(shlex.split(test_cmd), extra_env=test_env)
+        log_file = job_dir / "test" / "test.log"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        logger.info("启动测试: %s", shlex.join(cmd))
+        env = self._get_git_env()
+        env.update(test_env)
+
+        with open(log_file, "w") as f:
+            process = subprocess.Popen(
+                cmd,
+                cwd=job_dir,
+                stdout=f,
+                stderr=subprocess.STDOUT,
+                env=env,
+            )
+
+        logger.info("测试进程已启动, PID=%d, 日志=%s", process.pid, log_file)
+        return process
+
+    def _resolve_test_command(self, job_dir: Path, checkpoint_path: Path) -> str:
+        """优先仓库内脚本，否则使用 fallback 绝对路径。"""
+        repo_script = job_dir / "humanoid" / "scripts" / "test_with_metrics.py"
+        if repo_script.is_file():
+            return self.config.test_command
+        fallback = (self.config.test_script_fallback or "").strip()
+        if fallback:
+            return fallback
+        raise JobRunnerError(
+            f"未找到 test_with_metrics.py: {repo_script}；"
+            "请推送 contrib 到仓库或设置 NETTRAINBRIDGE_TEST_SCRIPT",
+        )
 
     def wait(self, process: subprocess.Popen, timeout: int | None = None) -> int:
         """等待训练完成。
@@ -206,14 +267,27 @@ class JobRunner:
 
     # ── 辅助方法 ──
 
-    def _wrap_conda(self, cmd: list[str]) -> list[str]:
-        """在指定 conda 环境中执行命令。"""
+    def _wrap_conda(
+        self,
+        cmd: list[str],
+        extra_env: dict[str, str] | None = None,
+    ) -> list[str]:
+        """在指定 conda 环境中执行命令。
+
+        extra_env 通过 ``conda run -e KEY=VALUE`` 传入，避免部分 conda 版本
+        不把 Popen env 转发给 ``conda run`` 子进程（导致 METRICS_FILE 丢失）。
+        """
         if not self.config.conda_env:
             return cmd
-        return [
+        conda_cmd = [
             "conda", "run", "-n", self.config.conda_env,
-            "--no-capture-output", *cmd,
+            "--no-capture-output",
         ]
+        if extra_env:
+            for key, value in extra_env.items():
+                conda_cmd.extend(["-e", f"{key}={value}"])
+        conda_cmd.extend(cmd)
+        return conda_cmd
 
     def _run(
         self,
@@ -251,9 +325,15 @@ class JobRunner:
             logger.info("清理工作目录: %s", job_dir)
             shutil.rmtree(job_dir)
 
-    def get_log_file(self, job_dir: Path) -> Path:
+    def get_log_file(self, job_dir: Path, *, is_test: bool = False) -> Path:
         """获取日志文件路径。"""
+        if is_test:
+            return job_dir / "test" / "test.log"
         return job_dir / "train.log"
+
+    def get_test_summary_file(self, job_dir: Path) -> Path:
+        """Mock 脚本产出的 summary.json（metrics 同级 test/ 目录）。"""
+        return job_dir / "test" / "summary.json"
 
     def get_metrics_file(self, job_dir: Path) -> Path:
         """获取指标文件路径。"""

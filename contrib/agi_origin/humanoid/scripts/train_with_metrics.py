@@ -140,7 +140,8 @@ def run_train_with_metrics(argv: list[str] | None = None) -> int:
     metrics_env = _metrics_file_env()
     if not metrics_env:
         print(
-            "[train_with_metrics] ERROR: NETTRAINBRIDGE_METRICS_FILE not set",
+            "[train_with_metrics] ERROR: NETTRAINBRIDGE_METRICS_FILE / "
+            "GRADMOTION_METRICS_FILE not set",
             file=sys.stderr,
             flush=True,
         )

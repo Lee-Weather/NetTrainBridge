@@ -47,11 +47,11 @@ R=$($NTB jobs --limit 1)
 check "ntb jobs 有输出" "任务列表" "$R"
 echo ""
 
-echo "--- 3. 创建测试任务 ---"
-JOB_ID=$(curl -s -X POST "$BASE_URL/jobs" \
-  -H "Content-Type: application/json" \
-  -d "{\"repo_url\":\"https://github.com/Lee-Weather/agi_origin.git\",\"commit_sha\":\"cli_test_$(date +%s)\"}" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+echo "--- 3. 创建测试任务 (ntb train run) ---"
+JOB_ID=$($NTB train run \
+  --repo "https://github.com/Lee-Weather/agi_origin.git" \
+  --commit "cli_test_$(date +%s)" \
+  --json | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 echo "  任务 ID: $JOB_ID"
 R=$($NTB job "$JOB_ID")
 check "ntb job 状态 PENDING" "PENDING" "$R"

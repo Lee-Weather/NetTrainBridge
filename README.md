@@ -1,221 +1,83 @@
 # NetTrainBridge
 
-在家推送代码，公司训练机自动训练，云端查看进度。
+在家 `git push` 同步代码；**训练首选 Gradmotion（gm）**；gm 不可用时用 **`ntb train run`** 在公司训练机兜底训练；可选 **`ntb sync`** 仅同步代码、**`ntb test run`** 做 sim2sim（后续版本）。
 
-## 项目简介
+## 做什么
 
-NetTrainBridge 是一个分布式强化学习训练任务管理系统，让你可以：
+- 家里 `git push` 同步代码到 GitHub
+- **主路径**：在 gm 云端训练（`gm task create` + `run`）
+- **兜底**：`ntb train run` 在公司训练机训练（gm 故障/环境不兼容时）
+- **同步**：`ntb sync` 仅把代码拉到训练机，不训练
+- 家里用 `ntb watch` 看 NTB 任务指标；训练完 checkpoint 在 Server `data/{job_id}/`
+- 训练完成后 Agent 写入 `meta.json`（`train_source: ntb`）
 
-- 在家里用 `git push` 提交训练代码
-- 公司内网训练机自动拉取并执行训练
-- 通过命令行 `ntb` 查看任务状态、训练指标和日志
-- 训练完成后从云端下载模型
+无需内网穿透、无需 SSH 到训练机。
 
-**核心优势**：无需内网穿透、无需 SSH、全程 GitOps 驱动。
-
-## 系统架构
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           你 的 家 里 (Home)                                │
-│  ┌──────────────────────────────────────────────────────────────────┐      │
-│  │  你的电脑 (Client)                                                │      │
-│  │  • 写代码、git push 到 GitHub                                     │      │
-│  │  • 终端 ntb watch 查看训练进度                                    │      │
-│  │  • wget 下载最终模型                                              │      │
-│  └──────────────────────────────────────────────────────────────────┘      │
-└───────────────────────────────┬─────────────────────────────────────────────┘
-                                │ HTTP
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          公 网 云 服 务 器                                   │
-│  ┌──────────────────────────────────────────────────────────────────┐      │
-│  │  FastAPI Server (端口 8000)                                       │      │
-│  │  • SQLite: 任务状态、训练指标                                     │      │
-│  │  • 本地磁盘: 模型文件                                             │      │
-│  │  • 纯 REST API（无 Web GUI）                                      │      │
-│  └──────────────────────────────────────────────────────────────────┘      │
-└───────────────────────────────┬─────────────────────────────────────────────┘
-                                │ Webhook
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          GitHub (代码托管)                                   │
-│  • push 后 Webhook 回调云服务器，自动创建训练任务                            │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                │
-                                │ 公司训练机通过代理访问外网
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          公 司 内 网                                        │
-│  ┌──────────────────────────────────────────────────────────────────┐      │
-│  │  训练服务器 (GPU 机器, conda 环境 F1)                           │      │
-│  │  ┌────────────────────────────────────────────────────────┐      │      │
-│  │  │  Agent - 长期运行的后台进程                             │      │      │
-│  │  │  • 轮询云服务器、抢占任务、clone 代码                   │      │      │
-│  │  │  • conda run -n F1 启动训练子进程                       │      │      │
-│  │  │  • 增量上报日志与指标                                   │      │      │
-│  │  │  • 训练结束后上传模型                                   │      │      │
-│  │  └────────────────────────────────────────────────────────┘      │      │
-│  └──────────────────────────────────────────────────────────────────┘      │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-## 目录结构
+## 架构
 
 ```
-NetTrainBridge/
-├── server/                          # 云服务器 (阶段一 ✅)
-│   ├── main.py                      # FastAPI 入口
-│   ├── config.py                    # 服务器配置
-│   ├── database.py                  # SQLite 初始化
-│   ├── models.py                    # Pydantic 数据模型
-│   ├── api/                         # API 路由
-│   │   ├── jobs.py                  # 任务 CRUD + 抢占
-│   │   ├── webhook.py               # GitHub Webhook
-│   │   ├── logs.py                  # 日志上报/查询
-│   │   ├── metrics.py               # 指标上报/查询
-│   │   └── checkpoint.py            # 模型上传/下载
-│   ├── test_e2e.sh                  # 全链路验证脚本
-│   ├── test_phase3.sh               # 阶段三验收脚本
-│   ├── test_cli.sh                  # CLI 验收脚本
-│   └── requirements.txt
-│
-├── pyproject.toml                   # 仅家里 CLI 需要：pip install -e ".[dev]" → ntb
-├── nettrainbridge_common/           # 共享配置加载
-│   └── config_loader.py
-├── cli/                             # 命令行客户端 (去 GUI 化 ✅)
-│   ├── nettrainbridge_cli/          # ntb 包入口
-│   └── ntb.py                       # 向后兼容 shim
-│
-├── contrib/agi_origin/              # agi_origin 集成脚本 (阶段三 ✅)
-│   └── humanoid/scripts/train_with_metrics.py
-│
-├── agent/                           # 公司训练机 (阶段二 ✅)
-│   ├── config.py                    # Agent 配置 (含 conda 环境)
-│   ├── api_client.py                # 云服务器 HTTP 客户端
-│   ├── job_runner.py                # clone / 安装依赖 / 启动训练
-│   ├── log_monitor.py               # 训练日志增量读取
-│   ├── metrics_reader.py            # metrics.jsonl 增量解析
-│   ├── heartbeat.py                 # GPU 心跳上报
-│   ├── agent.py                     # 主程序入口
-│   └── requirements.txt
-│
-├── plan/                            # 设计文档
-│   ├── plan_1.md                    # 架构蓝图
-│   ├── dev_phases.md                # 开发阶段规划
-│   ├── phase1_server_dev_plan.md    # 阶段一详细计划
-│   ├── phase2_agent_dev_plan.md     # 阶段二详细计划
-│   └── phase3_dev_plan.md           # 阶段三详细计划
-│
-└── README.md
+家里 (gm 训练 + ntb sync/train/test) ──HTTP──▶ 云服务器 FastAPI :8000
+                                                    ▲
+公司训练机 Agent (sync / 兜底 train / test) ──HTTP(+代理)──┘
+Gradmotion 云端 GPU（主路径训练）
 ```
 
-## 快速开始
+## 三端分工
 
-### 三端分工
 
-| 角色 | 机器 | conda 环境 | 安装什么 | 需要 `pip install -e .`？ |
-|:---|:---|:---|:---|:---|
-| **云服务器** | 公网 VPS | `nettrain` | `server/requirements.txt` | **否** |
-| **训练机 Agent** | 公司 GPU 机 | `F1` | `agent/requirements.txt` | **否** |
-| **家里 CLI** | 你的电脑 | 任意 3.8+ | 仓库根 `pip install -e ".[dev]"` | **是**（仅此处） |
+| 角色         | conda      | 安装                            | `pip install -e .`？ |
+| ---------- | ---------- | ----------------------------- | ------------------- |
+| **云服务器**   | `nettrain` | `server/requirements.txt`     | 否                   |
+| **训练机**    | `F1`       | `agent/requirements.txt`      | 否                   |
+| **家里 CLI** | 任意 3.8+    | 仓库根 `pip install -e ".[dev]"` | 是（仅此处）              |
 
-云服务器和训练机**都不需要**也不应该执行 `pip install -e .`；`ntb` 命令只在家里（或任意要监控的客户端）安装。
 
----
+## 启动
 
-### 启动方式
+配置文件路径：`~/.nettrainbridge/config.json`（三端共用；优先级：环境变量 > 配置文件 > 默认值）。
 
-#### 云服务器（`47.103.63.175`）
+### 云服务器
 
-```bash
-git pull
-conda activate nettrain
-cd server
-pip install -r requirements.txt    # 首次或依赖变更时
-
-python main.py
-```
-
-后台常驻（可选）：
-
-```bash
-nohup python main.py > /tmp/ntb-server.log 2>&1 &
-```
-
-自检：`curl http://127.0.0.1:8000/health` → `{"status":"ok"}`
-
-#### 训练机（公司内网 GPU 机）
-
-```bash
-git pull
-conda activate F1
-cd agent
-pip install -r requirements.txt    # 首次或依赖变更时
-
-python agent.py
-```
-
-后台常驻（可选）：
-
-```bash
-nohup python agent.py > /tmp/ntb-agent.log 2>&1 &
-```
-
-自检（需走公司代理）：
-
-```bash
-curl -x http://10.12.201.122:39000 http://47.103.63.175:8000/health
-```
-
-#### 家里电脑（监控进度，可选）
-
-```bash
-git pull
-pip install -e ".[dev]"            # 仅此端需要
-
-ntb config init
-ntb health
-ntb watch <job_id>
-```
-
-未安装包时仍可用：`python cli/ntb.py` 或 `python -m nettrainbridge_cli`。
-
----
-
-### 配置文件（三端共用）
-
-默认路径：`~/.nettrainbridge/config.json`（Windows：`%USERPROFILE%\.nettrainbridge\config.json`）
-
-**云服务器 / 训练机**（无 `ntb` 时，复制模板即可）：
+**配置（首次）**
 
 ```bash
 mkdir -p ~/.nettrainbridge
 cp config.example.json ~/.nettrainbridge/config.json
-# 编辑对应段落：云服务器改 server 段，训练机改 agent 段
 ```
 
-**家里电脑**（已装 `ntb` 时）：
-
-```bash
-ntb config init
-# 编辑 cli 段中的 server_url
-```
-
-优先级：**环境变量 > 配置文件 > 内置默认值**。
-
-`server` 段示例（云服务器）：
+编辑 `server` 段（按需改 `webhook_secret`、`allowed_repos`）：
 
 ```json
 "server": {
   "host": "0.0.0.0",
   "port": 8000,
-  "webhook_secret": "your-secret",
+  "webhook_secret": "",
   "allowed_repos": ["https://github.com/Lee-Weather/agi_origin.git"]
 }
 ```
 
-`agent` 段示例（训练机）：
+**启动**
+
+```bash
+git pull
+conda activate nettrain
+cd server && pip install -r requirements.txt   # 首次
+python main.py
+```
+
+启动日志应出现 `配置文件: ~/.nettrainbridge/config.json`。  
+自检：`curl http://127.0.0.1:8000/health`
+
+### 训练机
+
+**配置（首次）**
+
+```bash
+mkdir -p ~/.nettrainbridge
+cp config.example.json ~/.nettrainbridge/config.json
+```
+
+编辑 `agent` 段（`proxy` 按公司实际代理修改）：
 
 ```json
 "agent": {
@@ -228,247 +90,174 @@ ntb config init
 }
 ```
 
----
+**启动**
 
-### 端到端启动顺序
-
-```text
-1. 云服务器   conda activate nettrain && cd server && python main.py
-2. 训练机     conda activate F1 && cd agent && python agent.py
-3. 触发任务   agi_origin git push（或手动 curl webhook）
-4. 家里       ntb jobs && ntb watch <job_id>
+```bash
+git pull
+conda activate F1
+cd agent && pip install -r requirements.txt   # 首次
+python agent.py
 ```
 
-云服务器验收（在 `server/` 目录）：
+启动日志应出现 Agent ID、服务器地址、workspace。  
+自检：`curl -x http://10.12.201.122:39000 http://47.103.63.175:8000/health`
+
+### 家里（监控）
+
+**配置（首次）**
+
+```bash
+pip install -e ".[dev]"
+ntb config init
+```
+
+或手动复制模板后编辑 `cli` 段：
+
+```json
+"cli": {
+  "server_url": "http://47.103.63.175:8000"
+}
+```
+
+**使用**
+
+```bash
+ntb health
+ntb sync                 # 仅同步代码到训练机
+ntb train run            # 兜底训练（gm 不可用时）
+ntb train run --watch
+ntb trigger              # 已弃用，等同 train run
+ntb jobs
+ntb job <job_id>         # 含类型、训练来源（meta）
+ntb watch <job_id>
+```
+
+未安装包时：`python cli/ntb.py` 或 `python -m nettrainbridge_cli`（同样读 `~/.nettrainbridge/config.json`）。
+
+### 端到端顺序
+
+```text
+【主路径 — gm 训练】
+1. git push
+2. gm task create + gm task run
+3. gm task logs --follow
+
+【兜底 — ntb 训练】
+1. 云服务器  python main.py
+2. 训练机    python agent.py
+3. 家里      git push
+4. 家里      ntb train run [--watch]
+5. 家里      ntb job <id>   # 完成后可见 train_source=ntb
+
+【仅同步代码】
+ntb sync --commit <sha>
+```
+
+验收（云服务器 `server/` 目录）：
 
 ```bash
 bash test_phase3.sh http://localhost:8000
 bash test_cli.sh http://localhost:8000
-bash test_e2e.sh http://localhost:8000
 ```
 
-### 配置 GitHub Webhook
+## GitHub Webhook（可选，默认不用）
 
-在 [agi_origin](https://github.com/Lee-Weather/agi_origin) 仓库 Settings → Webhooks 添加：
+手动触发模式下 **无需配置 Webhook**。若 GitHub 上仍保留旧的 push Webhook，请在仓库 Settings → Webhooks 中 **Disable 或 Delete**，避免 push 时重复创建任务。
 
-| 配置项 | 值 |
-|:---|:---|
-| Payload URL | `http://你的云服务器IP:8000/webhook/github` |
-| Content type | `application/json` |
-| Secret | 与 `NETTRAINBRIDGE_WEBHOOK_SECRET` 一致（可选） |
-| Events | Just the push event |
+如需恢复 push 自动触发，可重新启用 Webhook：
 
-云服务器也可在配置文件的 `server.allowed_repos` 中设置白名单（见上文），或使用环境变量。
+在 [agi_origin](https://github.com/Lee-Weather/agi_origin) → Settings → Webhooks：
 
-## 使用流程
 
-### 日常使用（在家）
+| 项            | 值                                     |
+| ------------ | ------------------------------------- |
+| Payload URL  | `http://<云服务器IP>:8000/webhook/github` |
+| Content type | `application/json`                    |
+| Events       | Just the push event                   |
 
-```bash
-# 1. 修改训练代码
-vim train.py
 
-# 2. 提交并推送
-git add . && git commit -m "tune learning rate" && git push
+## CLI 速查
 
-# 3. 自动触发训练
-# GitHub Webhook → 云服务器创建任务 → Agent 自动执行
+完整帮助：`ntb --help`、`ntb <命令> --help`。
 
-# 4. 终端查看进度（需先 ntb config init 或配置 ~/.nettrainbridge/config.json）
-ntb jobs                              # 任务列表
-ntb job <job_id>                      # 任务详情
-ntb watch <job_id>                    # 实时指标 + GPU（推荐）
-ntb logs <job_id> -f                  # 另开终端：实时日志
+### 全局选项（所有子命令可用）
 
-# 5. 训练完成后下载模型
-wget http://云服务器IP:8000/jobs/<job_id>/checkpoint/<filename>.pt
-```
 
-## CLI 命令速查
+| 选项             | 说明               |
+| -------------- | ---------------- |
+| `--server URL` | 临时指定云服务器（覆盖配置文件） |
+| `--json`       | 输出原始 JSON        |
+
+
+配置文件 `cli.server_url`；可选 `api_token`（或环境变量 `NETTRAINBRIDGE_API_TOKEN`）用于 Bearer 认证。
+
+### 命令
+
 
 | 命令 | 说明 |
 |:---|:---|
 | `ntb health` | 服务器健康检查 |
+| `ntb sync` | 仅同步代码到训练机（不训练） |
+| `ntb train run` | **兜底**训练任务（`job_type=train`） |
+| `ntb trigger` | 已弃用，等同 `train run` |
 | `ntb jobs` | 任务列表 |
-| `ntb job <id>` | 任务详情 |
-| `ntb watch <id>` | 综合监控（Loss/Reward/GPU，每 5s） |
-| `ntb metrics <id>` | 指标表格 |
-| `ntb heartbeat <id>` | 最新 GPU 心跳 |
-| `ntb logs <id> --tail 50` | 最近 50 行日志 |
-| `ntb logs <id> -f` | SSE 实时日志 |
+| `ntb job <id>` | 单任务详情（含 meta 训练来源/模型） |
+| `ntb metrics <id>`   | 训练指标表格                             |
+| `ntb heartbeat <id>` | 最新 GPU 心跳（利用率、显存）                  |
+| `ntb logs <id>`      | 查询日志                               |
+| `ntb logs <id> -f`   | SSE 实时跟踪日志                         |
+| `ntb watch <id>`     | 综合监控（指标 + GPU，默认 5s 轮询）            |
+| `ntb config init`    | 生成 `~/.nettrainbridge/config.json` |
+| `ntb config path`    | 显示配置文件查找路径                         |
 
-| `ntb config init` | 生成默认配置文件 |
-| `ntb config path` | 查看配置文件路径 |
 
-加 `--json` 输出原始 JSON；`--server URL` 可临时指定服务器（覆盖配置文件）。
+### 常用参数
 
-## 服务器 API
 
-### 任务接口
-
-| 方法 | 路径 | 说明 |
+| 命令 | 参数 | 说明 |
 |:---|:---|:---|
-| `GET` | `/health` | 健康检查 |
-| `POST` | `/jobs` | 创建任务 |
-| `GET` | `/jobs` | 任务列表（支持 `?status=&limit=`） |
-| `GET` | `/jobs/pending` | 查询待处理任务 |
-| `GET` | `/jobs/{id}` | 查询单个任务 |
-| `PUT` | `/jobs/{id}/claim` | Agent 抢占任务 |
-| `PUT` | `/jobs/{id}/status` | 更新任务状态 |
+| `train run` / `sync` | `--repo URL` | 仓库地址（默认 `git remote get-url origin`） |
+| `train run` / `sync` | `--commit SHA` | Commit SHA（默认当前 HEAD） |
+| `train run` / `sync` | `--branch NAME` | 分支名（与 `--commit` 互斥） |
+| `train run` | `--watch` | 创建后立即 watch |
+| `train run` | `--interval SEC` | watch 轮询间隔（默认 5） |
+| `trigger` | （同 train run） | 已弃用 |
+| `jobs`        | `--status STATUS`  | 筛选：`PENDING` / `ASSIGNED` / `RUNNING` / `COMPLETED` / `FAILED` |
+| `jobs`        | `--limit N`        | 最多返回 N 条（默认 20）                                                |
+| `metrics`     | `--limit N`        | 最近 N 条指标                                                       |
+| `metrics`     | `--since-step N`   | 只返回 step > N 的记录                                               |
+| `logs`        | `--tail N`         | 只显示最后 N 行                                                      |
+| `watch`       | `--interval SEC`   | 轮询间隔秒数（默认 5）                                                   |
+| `watch`       | `--once`           | 只拉一轮（脚本/调试）                                                    |
+| `config init` | `--server-url URL` | 写入的服务器地址                                                       |
+| `config init` | `--path PATH`      | 自定义写入路径                                                        |
+| `config init` | `--force`          | 覆盖已有文件                                                         |
 
-### 上报与查询接口
 
-| 方法 | 路径 | 说明 |
-|:---|:---|:---|
-| `POST` | `/jobs/{id}/logs` | 上报训练日志 |
-| `GET` | `/jobs/{id}/logs` | 查询日志（支持 `?tail=N`） |
-| `GET` | `/jobs/{id}/logs/stream` | SSE 实时日志流 |
-| `POST` | `/jobs/{id}/metrics` | 上报训练指标 |
-| `GET` | `/jobs/{id}/metrics` | 查询指标（支持 `?since_step=N`） |
-| `POST` | `/jobs/{id}/heartbeat` | 上报心跳（GPU 状态） |
-| `GET` | `/jobs/{id}/heartbeat` | 查询最新心跳 |
-| `POST` | `/jobs/{id}/checkpoint` | 分片上传模型 |
-| `GET` | `/jobs/{id}/checkpoint/{filename}` | 下载模型 |
-
-### Webhook
-
-| 方法 | 路径 | 说明 |
-|:---|:---|:---|
-| `POST` | `/webhook/github` | GitHub Push Webhook |
-
-详细 API 文档见 [server/README.md](server/README.md)。
-
-## 配置说明
-
-CLI、Agent、Server **共用一份配置文件**，默认路径：
-
-| 系统 | 路径 |
-|:---|:---|
-| Linux / macOS | `~/.nettrainbridge/config.json` |
-| Windows | `C:\Users\你的用户名\.nettrainbridge\config.json` |
-
-生成模板：云服务器/训练机复制 `config.example.json`；家里电脑可用 `ntb config init`。
-
-优先级：**环境变量 > 配置文件 > 内置默认值**（日常用配置文件即可；部署时可用环境变量覆盖）。
-
-### 云服务器配置（`server` 段或环境变量）
-
-| 环境变量 | 默认值 | 说明 |
-|:---|:---|:---|
-| `NETTRAINBRIDGE_HOST` | 0.0.0.0 | 监听地址 |
-| `NETTRAINBRIDGE_PORT` | 8000 | 监听端口 |
-| `NETTRAINBRIDGE_DB_PATH` | data/server.db | SQLite 数据库路径 |
-| `NETTRAINBRIDGE_DATA_DIR` | data | 数据存储目录 |
-| `NETTRAINBRIDGE_WEBHOOK_SECRET` | （空） | GitHub Webhook 签名密钥 |
-| `NETTRAINBRIDGE_ALLOWED_REPOS` | （空） | 允许的仓库 URL，逗号分隔 |
-
-### Agent 配置（`agent` 段或环境变量）
-
-| 环境变量 | 默认值 | 说明 |
-|:---|:---|:---|
-| `NETTRAINBRIDGE_SERVER_URL` | http://localhost:8000 | 云服务器地址 |
-| `NETTRAINBRIDGE_PROXY` | 空 | 公司 HTTP 代理，如 `http://10.12.201.122:39000` |
-| `NETTRAINBRIDGE_AGENT_ID` | agent-001 | Agent 唯一标识 |
-| `NETTRAINBRIDGE_POLL_INTERVAL` | 30 | 任务轮询间隔（秒） |
-| `NETTRAINBRIDGE_HEARTBEAT_INTERVAL` | 30 | 心跳上报间隔（秒） |
-| `NETTRAINBRIDGE_LOG_UPLOAD_INTERVAL` | 5 | 日志上报间隔（秒） |
-| `NETTRAINBRIDGE_METRICS_UPLOAD_INTERVAL` | 10 | 指标上报间隔（秒） |
-| `NETTRAINBRIDGE_WORKSPACE` | ~/czy/nettrainbridge | 任务工作目录（clone 代码存放位置） |
-| `NETTRAINBRIDGE_CONDA_ENV` | F1 | 训练用 Conda 环境名，空则使用系统 Python |
-| `NETTRAINBRIDGE_TRAIN_COMMAND` | 见下方 | 训练启动命令模板 |
-| `NETTRAINBRIDGE_REQUEST_TIMEOUT` | 30 | HTTP 请求超时（秒） |
-| `NETTRAINBRIDGE_MAX_RETRIES` | 3 | 网络请求最大重试次数 |
-
-默认训练命令（阶段三，使用 `train_with_metrics.py` 写入 metrics.jsonl）：
+### 示例
 
 ```bash
-python humanoid/scripts/train_with_metrics.py --task=x1_dh_stand --run_name={job_id} --headless
+cd agi_origin && git push
+ntb train run --watch
+ntb sync --commit $(git rev-parse HEAD)
 ```
 
-脚本位于 [agi_origin](https://github.com/Lee-Weather/agi_origin) 仓库 `humanoid/scripts/train_with_metrics.py`（开发源在 `contrib/agi_origin/`）。
-
-## 任务状态流转
+## 任务状态
 
 ```
-PENDING → ASSIGNED → RUNNING → COMPLETED
-                              → FAILED
+PENDING → ASSIGNED → RUNNING → COMPLETED / FAILED
 ```
 
-| 状态 | 说明 |
-|:---|:---|
-| PENDING | 刚创建，等待 Agent 抢占 |
-| ASSIGNED | Agent 已抢占，准备 clone 代码 |
-| RUNNING | 训练进行中 |
-| COMPLETED | 训练成功完成 |
-| FAILED | 训练失败 |
-
-## 训练仓库适配
-
-默认适配 [agi_origin](https://github.com/Lee-Weather/agi_origin.git)（AgiBot X1 人形机器人 RL 训练，基于 Isaac Gym）。
-
-Agent 在 `F1` conda 环境中执行：
-
-```bash
-conda run -n F1 python humanoid/scripts/train.py \
-  --task=x1_dh_stand --run_name={job_id} --headless
-```
-
-模型搜索路径（训练完成后自动查找并上传）：
+## 目录概览
 
 ```
-logs/**/model_*.pt
-log/exported_policies/**/*.pt
+NetTrainBridge/
+├── server/          # 云 API
+├── agent/           # 训练机 Agent
+├── cli/             # ntb 客户端
+├── nettrainbridge_common/   # 共享配置加载
+├── config.example.json
+└── plan/            # 设计文档（见 plan/README.md）
 ```
 
-指标文件约定（由训练脚本或包装脚本写入）：
-
-```
-{workspace}/{job_id}/metrics.jsonl
-# 每行 JSON: {"step": 100, "loss": 0.5, "reward": 1.2}
-```
-
-## 开发进度
-
-| 阶段 | 内容 | 状态 |
-|:---|:---|:---|
-| 阶段一 | 云服务器 API | ✅ 完成 |
-| 阶段二 | Agent 基础版 | ✅ 完成 |
-| 阶段三 | 完整训练流 + CLI (`ntb`) | ✅ 完成 |
-| 阶段四 | 容错 + Token 认证 + 部署脚本 | 待开发 |
-
-### 阶段二细分进度
-
-| 模块 | 文件 | 状态 |
-|:---|:---|:---|
-| 配置 | `config.py` | ✅ |
-| API 客户端 | `api_client.py` | ✅ |
-| 任务执行器 | `job_runner.py`（含 conda 支持） | ✅ |
-| 日志监控 | `log_monitor.py` | ✅ |
-| 指标读取 | `metrics_reader.py` | ✅ |
-| 心跳上报 | `heartbeat.py` | ✅ |
-| 主程序 | `agent.py` | ✅ |
-
-## 成本估算
-
-| 项目 | 规格 | 月成本 |
-|:---|:---|:---|
-| 公网云服务器 | 2核2GB, 40GB硬盘 | ≈ 50 元 |
-| 公司训练机 | 已有 GPU | 0 元 |
-| GitHub | 私有仓库免费 | 0 元 |
-| **总计** | | **≈ 50 元/月** |
-
-## 技术栈
-
-- **云服务器**: FastAPI + SQLite + Uvicorn（纯 API，无 Web GUI）
-- **CLI**: Python + httpx（**仅家里电脑** `pip install -e ".[dev]"` → `ntb`）
-- **Agent**: Python 3.8+ + httpx + asyncio
-- **训练环境**: Conda (`F1`, Python 3.8.20) + Isaac Gym + PyTorch
-
-## 参考资料
-
-- [去 GUI 化改造计划](plan/remove_gui_plan.md)
-- [架构蓝图](plan/plan_1.md)
-- [开发阶段规划](plan/dev_phases.md)
-- [阶段一服务器开发计划](plan/phase1_server_dev_plan.md)
-- [阶段二 Agent 开发计划](plan/phase2_agent_dev_plan.md)
-- [阶段三训练流开发计划](plan/phase3_dev_plan.md)（Dashboard 已废弃，见 remove_gui_plan.md）
+设计与阶段规划见 [plan/README.md](plan/README.md)。

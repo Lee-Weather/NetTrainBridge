@@ -15,6 +15,24 @@ class JobStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class JobType(str, Enum):
+    TRAIN = "train"
+    SYNC = "sync"
+    TEST = "test"
+
+
+class TrainSource(str, Enum):
+    NTB = "ntb"
+    GM = "gm"
+
+
+class JobPhase(str, Enum):
+    SYNC = "sync"
+    FETCH = "fetch"
+    TEST = "test"
+    DONE = "done"
+
+
 # ── 任务相关 ──
 
 class JobCreate(BaseModel):
@@ -22,6 +40,12 @@ class JobCreate(BaseModel):
     repo_url: str
     commit_sha: str
     id: Optional[str] = None  # 可选，不传则自动生成
+    job_type: JobType = JobType.TRAIN
+    train_source: Optional[TrainSource] = None
+    gm_task_id: Optional[str] = None
+    gm_checkpoint: Optional[str] = None
+    parent_train_job_id: Optional[str] = None
+    phase: Optional[JobPhase] = None
 
 
 class JobClaim(BaseModel):
@@ -35,6 +59,11 @@ class JobStatusUpdate(BaseModel):
     error_msg: Optional[str] = None
 
 
+class JobPhaseUpdate(BaseModel):
+    """更新任务阶段请求（test job 状态机）"""
+    phase: JobPhase
+
+
 class JobResponse(BaseModel):
     """任务响应"""
     id: str
@@ -46,6 +75,11 @@ class JobResponse(BaseModel):
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     error_msg: Optional[str] = None
+    job_type: str = "train"
+    train_source: str = "ntb"
+    gm_task_id: Optional[str] = None
+    parent_train_job_id: Optional[str] = None
+    phase: Optional[str] = None
 
 
 # ── 指标相关 ──
@@ -56,6 +90,7 @@ class MetricCreate(BaseModel):
     loss: Optional[float] = None
     reward: Optional[float] = None
     lr: Optional[float] = None
+    kind: str = "train"
 
 
 class MetricBatchCreate(BaseModel):
@@ -69,6 +104,7 @@ class MetricResponse(BaseModel):
     loss: Optional[float] = None
     reward: Optional[float] = None
     lr: Optional[float] = None
+    kind: str = "train"
     timestamp: Optional[str] = None
 
 

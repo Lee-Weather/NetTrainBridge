@@ -13,8 +13,9 @@ _METRIC_FIELDS = ("step", "loss", "reward", "lr")
 class MetricsReader:
     """解析 metrics.jsonl，增量读取新指标。"""
 
-    def __init__(self, metrics_file: Path):
+    def __init__(self, metrics_file: Path, *, kind: str = "train"):
         self.metrics_file = metrics_file
+        self.kind = kind
         self.last_step = -1
 
     def reset(self):
@@ -68,7 +69,7 @@ class MetricsReader:
                     if step <= self.last_step:
                         continue
 
-                    metric = {"step": step}
+                    metric = {"step": step, "kind": record.get("kind", self.kind)}
                     for field in _METRIC_FIELDS:
                         if field == "step":
                             continue

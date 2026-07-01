@@ -39,6 +39,14 @@ class AgentConfig:
     # 注意: train.py 在 humanoid/scripts/ 目录下
     train_command: str = "python humanoid/scripts/train.py --task=x1_dh_stand --run_name={job_id} --headless"
 
+    # sim2sim 测试命令（步骤 8 默认 Mock）
+    test_command: str = (
+        "python humanoid/scripts/test_with_metrics.py "
+        "--mock --checkpoint={checkpoint_path} --headless"
+    )
+    # 仓库内无脚本时回退（训练机可设 NETTRAINBRIDGE_TEST_SCRIPT）
+    test_script_fallback: str = ""
+
     # 模型搜索路径 (相对于仓库根目录)
     model_search_pattern: str = "logs/**/model_*.pt"
     jit_model_search_pattern: str = "log/exported_policies/**/*.pt"
@@ -46,6 +54,10 @@ class AgentConfig:
     # HTTP 请求
     request_timeout: int = 30
     max_retries: int = 3
+
+    # Gradmotion (gm) — test job FETCH (5B)
+    gm_api_key: str = ""
+    gm_base_url: str = ""
 
     @classmethod
     def load(cls) -> "AgentConfig":
@@ -63,18 +75,23 @@ class AgentConfig:
             ("workspace", "NETTRAINBRIDGE_WORKSPACE", "GRADMOTION_WORKSPACE", str, instance.workspace),
             ("conda_env", "NETTRAINBRIDGE_CONDA_ENV", "GRADMOTION_CONDA_ENV", str, "F1"),
             ("train_command", "NETTRAINBRIDGE_TRAIN_COMMAND", "GRADMOTION_TRAIN_COMMAND", str, instance.train_command),
+            ("test_command", "NETTRAINBRIDGE_TEST_COMMAND", None, str, instance.test_command),
+            ("test_script_fallback", "NETTRAINBRIDGE_TEST_SCRIPT", None, str, ""),
             ("request_timeout", "NETTRAINBRIDGE_REQUEST_TIMEOUT", "GRADMOTION_REQUEST_TIMEOUT", int, 30),
             ("max_retries", "NETTRAINBRIDGE_MAX_RETRIES", "GRADMOTION_MAX_RETRIES", int, 3),
+            ("gm_api_key", "GM_API_KEY", None, str, ""),
+            ("gm_base_url", "GM_BASE_URL", None, str, ""),
         ]
 
         for field_name, env_new, env_old, field_type, default in _fields:
-            raw = get_setting(
-                field_name,
-                env_new=env_new,
-                env_old=env_old,
-                section="agent",
-                default=default,
-            )
+            kwargs: dict = {
+                "env_new": env_new,
+                "section": "agent",
+                "default": default,
+            }
+            if env_old:
+                kwargs["env_old"] = env_old
+            raw = get_setting(field_name, **kwargs)
             if raw is not None and raw != "":
                 setattr(instance, field_name, field_type(raw))
 
