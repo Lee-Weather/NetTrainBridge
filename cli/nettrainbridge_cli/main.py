@@ -284,19 +284,33 @@ def cmd_sync(args: argparse.Namespace) -> None:
 
 
 def cmd_test_run(args: argparse.Namespace) -> None:
-    """创建 sim2sim 测试任务（ntb test run，步骤 5 仅占位 POST）。"""
+    """创建 sim2sim 测试任务（ntb test run）。"""
     if args.gm_task_id and args.train_job_id:
         raise CLIError("--gm-task-id 与 --train-job-id 不能同时指定")
     if not args.gm_task_id and not args.train_job_id:
         raise CLIError("必须指定 --gm-task-id 或 --train-job-id 之一")
+    if not args.load_run:
+        raise CLIError(
+            "--load-run 为必填（训练 logs 目录名，"
+            "如 2026-01-14_09-58-10test_20_video）",
+        )
 
     repo_url, commit_sha = _resolve_repo_commit(args)
-    extra: dict[str, Any] = {"job_type": "test"}
+    extra: dict[str, Any] = {
+        "job_type": "test",
+        "load_run": args.load_run,
+        "task": args.task or "x1_dh_stand",
+    }
     if args.gm_task_id:
         extra["gm_task_id"] = args.gm_task_id
         extra["gm_checkpoint"] = args.checkpoint
+        if args.checkpoint.isdigit():
+            extra["checkpoint"] = int(args.checkpoint)
     else:
         extra["parent_train_job_id"] = args.train_job_id
+        if not str(args.checkpoint).isdigit():
+            raise CLIError("ntb 路径请用 --checkpoint 指定整数（如 3000）")
+        extra["checkpoint"] = int(args.checkpoint)
 
     data = _create_job(repo_url, commit_sha, **extra)
 
@@ -304,13 +318,17 @@ def cmd_test_run(args: argparse.Namespace) -> None:
         print_json(data)
     else:
         _print_job_created(data, watch_hint=not args.watch, action="监控")
+        print(f"  load_run:    {args.load_run}")
+        print(f"  task:        {args.task or 'x1_dh_stand'}")
         if data.get("gm_task_id"):
             print(f"  gm 任务:     {data.get('gm_task_id')}")
             meta = request_json_optional("GET", f"/jobs/{data['id']}/meta")
             if meta and meta.get("gm_checkpoint"):
-                print(f"  checkpoint:  {meta.get('gm_checkpoint')}")
+                print(f"  gm ckpt:     {meta.get('gm_checkpoint')}")
         if data.get("parent_train_job_id"):
             print(f"  训练任务:    {data.get('parent_train_job_id')}")
+            if extra.get("checkpoint") is not None:
+                print(f"  checkpoint:  {extra['checkpoint']}")
 
     if args.watch:
         watch_args = argparse.Namespace(
@@ -359,6 +377,12 @@ def cmd_job(args: argparse.Namespace) -> None:
 
     meta = request_json_optional("GET", f"/jobs/{args.job_id}/meta")
     if meta and isinstance(meta, dict):
+        if meta.get("load_run"):
+            fields.append(("load_run", meta.get("load_run")))
+        if meta.get("task"):
+            fields.append(("task", meta.get("task")))
+        if meta.get("checkpoint") is not None:
+            fields.append(("checkpoint", meta.get("checkpoint")))
         if meta.get("gm_checkpoint"):
             fields.append(("gm checkpoint", meta.get("gm_checkpoint")))
         if meta.get("model_filename"):
@@ -808,6 +832,17 @@ def build_parser() -> argparse.ArgumentParser:
     test_run = test_sub.add_parser("run", parents=[common], help="创建测试任务")
     _add_git_source_args(test_run)
     _add_train_watch_args(test_run)
+    test_run.add_argument(
+        "--load-run",
+        dest="load_run",
+        required=True,
+        help="训练 logs 目录名（如 2026-01-14_09-58-10test_20_video）",
+    )
+    test_run.add_argument(
+        "--task",
+        default="x1_dh_stand",
+        help="训练任务名（默认 x1_dh_stand）",
+    )
     test_run.add_argument(
         "--gm-task-id",
         dest="gm_task_id",

@@ -9,8 +9,8 @@
 | 阶段 | 计划步骤 | 内容 | 状态 |
 |:---|:---|:---|:---|
 | **框架 + Mock** | 步骤 7 | `test_with_metrics.py` 占位脚本（`--mock` / `--self-test`） | 脚本骨架已建 |
-| **链路打通** | 步骤 8 | Agent `test_command` 调 Mock；`ntb test run` 端到端 | 待做 |
-| **真实 sim2sim** | **R1（后续）** | `run_real_sim2sim()` 对接 `play.py` / Isaac | **刻意延后** |
+| **链路打通** | 步骤 8 | Agent `test_command` 调 Mock；`ntb test run` 端到端 | ✅ |
+| **真实 sim2sim** | **R1（后续）** | `run_real_sim2sim()` 对接 `play.py` / Isaac | 见 [r1-sim2sim-plan.md](r1-sim2sim-plan.md) |
 
 **原则**：步骤 5～8 只验证「test job → fetch 模型 → 跑脚本 → 上报 metrics/logs/产物」，**不要求仿真环境可跑**。
 
@@ -55,15 +55,11 @@ python contrib/agi_origin/humanoid/scripts/test_with_metrics.py \
 
 ---
 
-## R1：真实 sim2sim 待办（现在不写）
+## R1：真实 sim2sim
 
-1. 调研 agi_origin `play.py` 参数与 stdout 格式  
-2. 在 `run_real_sim2sim()` 内 subprocess 包装 play，或 import 调用  
-3. 解析测试指标字段（reward、success_rate、episode_length 等）  
-4. 与 gm / ntb 训练 checkpoint 加载路径对齐  
-5. 环境一致性：gm 镜像 vs 训练机 conda Isaac 版本  
-6. 可选：录屏 / 轨迹文件上传 Server `data/{id}/test/`  
-7. 将 `test_command` 从 `--mock` 改为真实参数；保留 `--mock` 供 CI  
+详细分阶段计划见 **[r1-sim2sim-plan.md](r1-sim2sim-plan.md)**。
+
+核心前提：**训练项目代码与 gm 最新模型放在同一工程目录（同窗）**，再实现 `run_real_sim2sim()` 与 Agent 集成。
 
 ---
 

@@ -39,10 +39,10 @@ class AgentConfig:
     # 注意: train.py 在 humanoid/scripts/ 目录下
     train_command: str = "python humanoid/scripts/train.py --task=x1_dh_stand --run_name={job_id} --headless"
 
-    # sim2sim 测试命令（步骤 8 默认 Mock）
+    # sim2sim 测试命令（R1-2 真实 play；Mock 可设 NETTRAINBRIDGE_TEST_COMMAND）
     test_command: str = (
         "python humanoid/scripts/test_with_metrics.py "
-        "--mock --checkpoint={checkpoint_path} --headless"
+        "--task={task} --load-run={load_run} --checkpoint={checkpoint} --headless"
     )
     # 仓库内无脚本时回退（训练机可设 NETTRAINBRIDGE_TEST_SCRIPT）
     test_script_fallback: str = ""

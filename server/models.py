@@ -44,6 +44,9 @@ class JobCreate(BaseModel):
     train_source: Optional[TrainSource] = None
     gm_task_id: Optional[str] = None
     gm_checkpoint: Optional[str] = None
+    load_run: Optional[str] = None
+    task: Optional[str] = None
+    checkpoint: Optional[int] = None
     parent_train_job_id: Optional[str] = None
     phase: Optional[JobPhase] = None
 

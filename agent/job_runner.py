@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 import shutil
 import subprocess
@@ -183,22 +184,32 @@ class JobRunner:
         self,
         job_dir: Path,
         job_id: str,
-        checkpoint_path: Path,
+        test_ctx: dict,
     ) -> subprocess.Popen:
-        """启动 sim2sim 测试子进程（Mock 或真实 test_command）。"""
-        test_cmd = self._resolve_test_command(job_dir, checkpoint_path)
-        test_cmd = test_cmd.format(
-            job_id=job_id,
-            checkpoint_path=str(checkpoint_path),
-        )
+        """启动 sim2sim 测试子进程。"""
+        test_cmd = self._resolve_test_command(job_dir)
+        fmt = {
+            "job_id": job_id,
+            "checkpoint_path": str(test_ctx["checkpoint_path"]),
+            "load_run": test_ctx["load_run"],
+            "checkpoint": test_ctx["checkpoint"],
+            "task": test_ctx.get("task", "x1_dh_stand"),
+        }
+        test_cmd = test_cmd.format(**fmt)
 
         metrics_file = job_dir / "metrics.jsonl"
+        test_dir = job_dir / "test"
         test_env = {
             "NETTRAINBRIDGE_JOB_ID": job_id,
             "GRADMOTION_JOB_ID": job_id,
             "NETTRAINBRIDGE_METRICS_FILE": str(metrics_file),
             "GRADMOTION_METRICS_FILE": str(metrics_file),
-            "NETTRAINBRIDGE_CHECKPOINT_PATH": str(checkpoint_path),
+            "NETTRAINBRIDGE_CHECKPOINT_PATH": str(test_ctx["checkpoint_path"]),
+            "NETTRAINBRIDGE_LOAD_RUN": str(test_ctx["load_run"]),
+            "NETTRAINBRIDGE_CHECKPOINT": str(test_ctx["checkpoint"]),
+            "NETTRAINBRIDGE_TEST_OUTPUT_DIR": str(test_dir),
+            "NETTRAINBRIDGE_PLAY_RENDER": "0",
+            "NETTRAINBRIDGE_PLAY_LOG_CSV": "1",
         }
 
         cmd = self._wrap_conda(shlex.split(test_cmd), extra_env=test_env)
@@ -221,8 +232,11 @@ class JobRunner:
         logger.info("测试进程已启动, PID=%d, 日志=%s", process.pid, log_file)
         return process
 
-    def _resolve_test_command(self, job_dir: Path, checkpoint_path: Path) -> str:
+    def _resolve_test_command(self, job_dir: Path) -> str:
         """优先仓库内脚本，否则使用 fallback 绝对路径。"""
+        override = (os.environ.get("NETTRAINBRIDGE_TEST_COMMAND") or "").strip()
+        if override:
+            return override
         repo_script = job_dir / "humanoid" / "scripts" / "test_with_metrics.py"
         if repo_script.is_file():
             return self.config.test_command

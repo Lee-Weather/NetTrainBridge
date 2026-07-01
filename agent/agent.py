@@ -11,8 +11,14 @@ from pathlib import Path
 from typing import Optional
 
 from api_client import APIClient, APIError
+from checkpoint_layout import (
+    DEFAULT_TEST_TASK,
+    checkpoint_int_from_spec,
+    logs_export_dir,
+)
 from config import AgentConfig
 from fetch_runner import FetchRunner, FetchRunnerError
+from test_context import resolve_test_context
 from heartbeat import create_heartbeat_reporter
 from job_runner import JobRunner, JobRunnerError
 from log_monitor import LogMonitor
@@ -176,7 +182,7 @@ class Agent:
         await self._run_train_job(job)
 
     async def _run_test_job(self, job: dict):
-        """test job：sync → fetch(gm) → Mock sim2sim → COMPLETED。"""
+        """test job：sync → fetch(gm) → sim2sim → COMPLETED。"""
         job_id = job["id"]
         repo_url = job["repo_url"]
         commit_sha = job["commit_sha"]
@@ -206,20 +212,33 @@ class Agent:
 
                 meta = await self.api_client.get_job_meta(job_id) or {}
                 gm_checkpoint = meta.get("gm_checkpoint", "latest")
-                models_dir = job_dir / "fetched_models"
+                task = meta.get("task") or DEFAULT_TEST_TASK
+                load_run = meta.get("load_run")
+                if not load_run:
+                    raise FetchRunnerError(
+                        "test job 缺少 load_run（请 ntb test run --load-run）",
+                    )
+
+                models_dir = logs_export_dir(job_dir, task, load_run)
                 model_path = await _run_in_thread(
                     self.fetch_runner.fetch_checkpoint,
                     gm_task_id,
                     gm_checkpoint,
                     models_dir,
                 )
+                checkpoint_int = checkpoint_int_from_spec(gm_checkpoint, model_path.name)
+                rel_model = model_path.relative_to(job_dir)
                 await self.api_client.upload_checkpoint(job_id, model_path)
                 await self.api_client.put_job_meta(
                     job_id,
                     {
                         "model_filename": model_path.name,
+                        "model_path": str(rel_model),
                         "gm_task_id": gm_task_id,
                         "gm_checkpoint": gm_checkpoint,
+                        "task": task,
+                        "load_run": load_run,
+                        "checkpoint": checkpoint_int,
                     },
                 )
                 await self.api_client.update_phase(job_id, "test")
@@ -235,8 +254,8 @@ class Agent:
                     return
                 if not job_dir.is_dir():
                     raise JobRunnerError(f"工作目录不存在: {job_dir}")
-                checkpoint_path = await self._resolve_test_checkpoint(job, job_dir)
-                await self._start_test_sim2sim(job, job_dir, checkpoint_path)
+                test_ctx = await resolve_test_context(self.api_client, job, job_dir)
+                await self._start_test_sim2sim(job, job_dir, test_ctx)
                 return
 
             logger.warning("test job %s 未知阶段 %s", job_id, phase)
@@ -255,47 +274,19 @@ class Agent:
                 job_id, "FAILED", error_msg=f"API error: {e}",
             )
 
-    async def _resolve_test_checkpoint(self, job: dict, job_dir: Path) -> Path:
-        """解析待测模型路径（gm 本地 / ntb 从父任务下载）。"""
-        train_source = job.get("train_source") or "ntb"
-        if train_source == "gm":
-            models_dir = job_dir / "fetched_models"
-            if models_dir.is_dir():
-                pts = list(models_dir.glob("*.pt"))
-                if pts:
-                    return max(pts, key=lambda p: p.stat().st_mtime)
-            meta = await self.api_client.get_job_meta(job["id"]) or {}
-            filename = meta.get("model_filename")
-            if filename:
-                local = models_dir / filename
-                if local.is_file():
-                    return local
-            raise FetchRunnerError("gm 路径未找到本地 checkpoint")
-
-        parent_id = job.get("parent_train_job_id")
-        if not parent_id:
-            raise FetchRunnerError("ntb test 缺少 parent_train_job_id")
-
-        parent_meta = await self.api_client.get_job_meta(parent_id) or {}
-        filename = parent_meta.get("model_filename") or "best_model.pt"
-        dest_dir = job_dir / "parent_model"
-        return await self.api_client.download_checkpoint(
-            parent_id, filename, dest_dir / filename,
-        )
-
     async def _start_test_sim2sim(
         self,
         job: dict,
         job_dir: Path,
-        checkpoint_path: Path,
+        test_ctx: dict,
     ) -> None:
-        """启动 Mock sim2sim 子进程并注册监控。"""
+        """启动 sim2sim 子进程并注册监控。"""
         job_id = job["id"]
         process = await _run_in_thread(
             self.job_runner.start_test,
             job_dir,
             job_id,
-            checkpoint_path,
+            test_ctx,
         )
         self._log_monitor = LogMonitor(
             self.job_runner.get_log_file(job_dir, is_test=True),

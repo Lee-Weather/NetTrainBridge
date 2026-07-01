@@ -59,7 +59,8 @@ R=$(curl -s -X POST "$BASE_URL/jobs" \
     "repo_url":"https://github.com/test/v02-step6-phase.git",
     "commit_sha":"step6_phase",
     "job_type":"test",
-    "gm_task_id":"task_phase"
+    "gm_task_id":"task_phase",
+    "load_run":"2026-01-14_09-58-10test_20_video"
   }')
 JOB_ID=$(json_field "$R" id)
 R=$(curl -s -X PUT "$BASE_URL/jobs/$JOB_ID/phase" \

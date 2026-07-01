@@ -90,6 +90,14 @@ def _build_initial_meta(
     if req.gm_task_id:
         meta["gm_task_id"] = req.gm_task_id
         meta["gm_checkpoint"] = req.gm_checkpoint or "latest"
+    if req.load_run:
+        meta["load_run"] = req.load_run
+    if req.task:
+        meta["task"] = req.task
+    elif req.job_type == JobType.TEST:
+        meta.setdefault("task", "x1_dh_stand")
+    if req.checkpoint is not None:
+        meta["checkpoint"] = req.checkpoint
     if req.parent_train_job_id:
         meta["parent_train_job_id"] = req.parent_train_job_id
     if phase:
@@ -118,6 +126,16 @@ def _validate_job_create(req: JobCreate) -> None:
             raise HTTPException(
                 status_code=400,
                 detail="gm_checkpoint requires gm_task_id",
+            )
+        if not req.load_run:
+            raise HTTPException(
+                status_code=400,
+                detail="test job requires load_run",
+            )
+        if req.parent_train_job_id and req.checkpoint is None:
+            raise HTTPException(
+                status_code=400,
+                detail="test job with parent_train_job_id requires checkpoint (int)",
             )
 
 

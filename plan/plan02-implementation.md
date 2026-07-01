@@ -301,10 +301,12 @@ ntb test run --train-job-id <train_id> --watch
 
 ## R1（后续）：真实 sim2sim 实现
 
-> 不在步骤 5～8 范围内；步骤 8 合并后再开分支。
+> 不在步骤 5～8 范围内；步骤 8 合并后再开分支。  
+> **详细计划**：[r1-sim2sim-plan.md](r1-sim2sim-plan.md)
 
 | 项 | 内容 |
 |:---|:---|
+| 前提 | 训练代码 + gm 最新模型同窗（`{job_dir}/` + `models/`） |
 | 代码 | 实现 `test_with_metrics.py` 内 `run_real_sim2sim()` |
 | 配置 | `test_command` 去掉 `--mock`，补 `--task` / `--headless` 等 |
 | 验收 | 真实 reward / success_rate；可选录屏上传 |

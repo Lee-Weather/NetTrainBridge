@@ -17,6 +17,9 @@ _TEST_SCRIPT = (
     _REPO_ROOT / "contrib/agi_origin/humanoid/scripts/test_with_metrics.py"
 )
 DEFAULT_BASE = os.environ.get("NETTRAINBRIDGE_SERVER_URL", "http://127.0.0.1:8000")
+STEP8_LOAD_RUN = "step8_mock_load_run"
+STEP8_TASK = "x1_dh_stand"
+STEP8_CHECKPOINT = 3000
 
 
 def _post(base: str, path: str, **kwargs) -> dict:
@@ -130,6 +133,9 @@ def simulate_ntb_path(base: str) -> str:
             "commit_sha": "step8_ntb",
             "job_type": "test",
             "parent_train_job_id": train_id,
+            "load_run": STEP8_LOAD_RUN,
+            "task": STEP8_TASK,
+            "checkpoint": STEP8_CHECKPOINT,
         },
     )
     test_id = test["id"]
@@ -173,6 +179,8 @@ def simulate_gm_path(base: str) -> str:
             "job_type": "test",
             "gm_task_id": "task_step8_mock",
             "gm_checkpoint": "latest",
+            "load_run": STEP8_LOAD_RUN,
+            "task": STEP8_TASK,
         },
     )
     test_id = test["id"]

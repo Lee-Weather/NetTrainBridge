@@ -82,7 +82,9 @@ R=$(curl -s -X POST "$BASE_URL/jobs" \
     "commit_sha":"step5_gm_sha",
     "job_type":"test",
     "gm_task_id":"task_step5_gm",
-    "gm_checkpoint":"latest"
+    "gm_checkpoint":"latest",
+    "load_run":"2026-01-14_09-58-10test_20_video",
+    "task":"x1_dh_stand"
   }')
 TEST_GM_ID=$(json_field "$R" id)
 check "test job_type" "test" "$R"
@@ -94,6 +96,7 @@ check_dir "gm test test/" "$DATA_DIR/$TEST_GM_ID/test"
 check_dir "gm test videos/" "$DATA_DIR/$TEST_GM_ID/test/videos"
 META=$(curl -s "$BASE_URL/jobs/$TEST_GM_ID/meta")
 check "meta gm_checkpoint" "latest" "$META"
+check "meta load_run" "2026-01-14_09-58-10test_20_video" "$META"
 check "meta phase" "sync" "$META"
 echo ""
 
@@ -104,7 +107,10 @@ R=$(curl -s -X POST "$BASE_URL/jobs" \
     \"repo_url\":\"https://github.com/test/v02-step5-ntb.git\",
     \"commit_sha\":\"step5_ntb_sha\",
     \"job_type\":\"test\",
-    \"parent_train_job_id\":\"$PARENT_ID\"
+    \"parent_train_job_id\":\"$PARENT_ID\",
+    \"load_run\":\"2026-01-14_09-58-10test_20_video\",
+    \"task\":\"x1_dh_stand\",
+    \"checkpoint\":3000
   }")
 TEST_NTB_ID=$(json_field "$R" id)
 check "parent_train_job_id" "$PARENT_ID" "$R"
@@ -134,7 +140,9 @@ CODE=$(curl -s -o /tmp/v02_step5_bad3.json -w '%{http_code}' -X POST "$BASE_URL/
     "repo_url":"https://github.com/test/bad3.git",
     "commit_sha":"x",
     "job_type":"test",
-    "parent_train_job_id":"nonexistent_job_id"
+    "parent_train_job_id":"nonexistent_job_id",
+    "load_run":"bad_load_run",
+    "checkpoint":3000
   }')
 check "无效 parent → 400" "400" "$CODE"
 echo ""
@@ -147,6 +155,7 @@ CLI_GM=$($NTB test run \
   --repo "https://github.com/test/v02-step5-cli-gm.git" \
   --commit "step5_cli_gm" \
   --gm-task-id "task_cli_gm" \
+  --load-run "2026-01-14_09-58-10test_20_video" \
   --checkpoint "model_3000.pt" \
   --json)
 CLI_GM_ID=$(echo "$CLI_GM" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
@@ -158,11 +167,16 @@ CLI_NTB_OUT=$($NTB test run \
   --repo "https://github.com/test/v02-step5-cli-ntb.git" \
   --commit "step5_cli_ntb" \
   --train-job-id "$PARENT_ID" \
+  --load-run "2026-01-14_09-58-10test_20_video" \
+  --checkpoint 3000 \
   --json)
 check "CLI ntb parent" "$PARENT_ID" "$CLI_NTB_OUT"
 
-R=$($NTB test run --repo "https://github.com/test/x.git" --commit "x" 2>&1) && RC=0 || RC=$?
-check "CLI 缺参数报错" "必须指定" "$R"
+R=$($NTB test run \
+  --repo "https://github.com/test/x.git" \
+  --commit "x" \
+  --load-run "2026-01-14_09-58-10test_20_video" 2>&1) && RC=0 || RC=$?
+check "CLI 缺 gm/parent 报错" "必须指定" "$R"
 echo ""
 
 echo "--- 6. 回归 test_v02_jobs ---"

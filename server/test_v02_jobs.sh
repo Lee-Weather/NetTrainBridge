@@ -59,7 +59,8 @@ R=$(curl -s -X POST "$BASE_URL/jobs" \
     "repo_url":"https://github.com/test/v02-test.git",
     "commit_sha":"test_gm_sha",
     "job_type":"test",
-    "gm_task_id":"task_gm_001"
+    "gm_task_id":"task_gm_001",
+    "load_run":"2026-01-14_09-58-10test_20_video"
   }')
 check "test job_type" "test" "$R"
 check "train_source 自动 gm" "gm" "$R"
@@ -74,7 +75,9 @@ R=$(curl -s -X POST "$BASE_URL/jobs" \
     \"repo_url\":\"https://github.com/test/v02-test-ntb.git\",
     \"commit_sha\":\"test_ntb_sha\",
     \"job_type\":\"test\",
-    \"parent_train_job_id\":\"$DEFAULT_ID\"
+    \"parent_train_job_id\":\"$DEFAULT_ID\",
+    \"load_run\":\"2026-01-14_09-58-10test_20_video\",
+    \"checkpoint\":3000
   }")
 check "test parent_train_job_id" "$DEFAULT_ID" "$R"
 check "train_source 自动 ntb" "ntb" "$(json_field "$R" train_source)"

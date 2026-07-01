@@ -77,7 +77,7 @@ echo ""
 echo "--- 3. artifacts API + CLI ---"
 TEST_JSON=$(curl -s -X POST "$BASE_URL/jobs" \
   -H "Content-Type: application/json" \
-  -d "{\"repo_url\":\"https://github.com/test/v02-art-test.git\",\"commit_sha\":\"art_test\",\"job_type\":\"test\",\"parent_train_job_id\":\"$JOB_ID\"}")
+  -d "{\"repo_url\":\"https://github.com/test/v02-art-test.git\",\"commit_sha\":\"art_test\",\"job_type\":\"test\",\"parent_train_job_id\":\"$JOB_ID\",\"load_run\":\"2026-01-14_09-58-10test_20_video\",\"checkpoint\":3000}")
 TEST_ID=$(echo "$TEST_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 echo '{"mode":"mock"}' > /tmp/step9_summary.json
 curl -s -X POST "$BASE_URL/jobs/$TEST_ID/test/summary.json" \
