@@ -77,3 +77,13 @@ async def clear_logs(job_id: str):
     if job_id in _log_cache:
         _log_cache[job_id].clear()
     return {"status": "ok"}
+
+
+def drop_job_logs(job_id: str) -> None:
+    """移除内存中的任务日志缓存。"""
+    _log_cache.pop(job_id, None)
+
+
+def drop_all_logs() -> None:
+    """清空全部内存日志缓存。"""
+    _log_cache.clear()

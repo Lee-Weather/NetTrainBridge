@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -56,3 +57,20 @@ def init_job_layout(job_id: str, meta: dict[str, Any]) -> dict[str, Any]:
     test.mkdir(parents=True, exist_ok=True)
     (test / "videos").mkdir(parents=True, exist_ok=True)
     return merge_meta(job_id, meta)
+
+
+def list_disk_job_ids() -> list[str]:
+    """列出 data/ 下所有任务目录名。"""
+    root = Path(_config.DATA_DIR)
+    if not root.is_dir():
+        return []
+    return sorted(p.name for p in root.iterdir() if p.is_dir())
+
+
+def delete_job_dir(job_id: str) -> bool:
+    """删除 data/{job_id}/ 目录；存在则返回 True。"""
+    path = job_dir(job_id)
+    if not path.is_dir():
+        return False
+    shutil.rmtree(path)
+    return True

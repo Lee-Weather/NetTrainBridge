@@ -16,6 +16,16 @@ _config = ServerConfig.load()
 _upload_sessions: dict[str, dict] = {}
 
 
+def drop_upload_session(job_id: str) -> None:
+    """移除分片上传会话。"""
+    _upload_sessions.pop(job_id, None)
+
+
+def drop_all_upload_sessions() -> None:
+    """清空全部分片上传会话。"""
+    _upload_sessions.clear()
+
+
 def _job_dir(job_id: str) -> Path:
     """获取任务的数据目录。"""
     return job_data.job_dir(job_id)

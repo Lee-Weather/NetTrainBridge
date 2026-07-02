@@ -156,6 +156,10 @@ def _format_jobs_table(jobs: list[dict]) -> str:
 
 
 def cmd_jobs(args: argparse.Namespace) -> None:
+    if getattr(args, "jobs_command", None) == "clear":
+        cmd_jobs_clear(args)
+        return
+
     params: dict[str, Any] = {"limit": args.limit}
     if args.status:
         params["status"] = args.status
@@ -168,6 +172,25 @@ def cmd_jobs(args: argparse.Namespace) -> None:
     jobs = data if isinstance(data, list) else []
     print(f"任务列表 ({len(jobs)}) — {server_url()}")
     print(_format_jobs_table(jobs))
+
+
+def cmd_jobs_clear(args: argparse.Namespace) -> None:
+    """清空 Server 上全部任务（不可恢复）。"""
+    if not args.yes:
+        raise CLIError("危险操作：请使用 ntb jobs clear --yes 确认清空所有任务")
+
+    data = request_json("DELETE", "/jobs", params={"confirm": "true"})
+    if args.json:
+        print_json(data)
+        return
+
+    deleted = data.get("deleted_jobs", 0) if isinstance(data, dict) else 0
+    dirs = data.get("deleted_dirs", 0) if isinstance(data, dict) else 0
+    orphans = data.get("orphan_dirs", 0) if isinstance(data, dict) else 0
+    print(f"已清空任务: 数据库 {deleted} 条, 目录 {dirs} 个", end="")
+    if orphans:
+        print(f"（含孤儿目录 {orphans} 个）", end="")
+    print()
 
 
 def _git_output(*git_args: str) -> str:
@@ -809,10 +832,24 @@ def build_parser() -> argparse.ArgumentParser:
     health = sub.add_parser("health", parents=[common], help="健康检查")
     health.set_defaults(func=cmd_health)
 
-    jobs = sub.add_parser("jobs", parents=[common], help="任务列表")
+    jobs = sub.add_parser("jobs", parents=[common], help="任务列表 / 清空")
+    jobs_sub = jobs.add_subparsers(dest="jobs_command", required=False)
     jobs.add_argument("--status", choices=["PENDING", "ASSIGNED", "RUNNING", "COMPLETED", "FAILED"])
     jobs.add_argument("--limit", type=int, default=20)
     jobs.set_defaults(func=cmd_jobs)
+
+    jobs_list = jobs_sub.add_parser("list", parents=[common], help="列出任务（默认）")
+    jobs_list.add_argument("--status", choices=["PENDING", "ASSIGNED", "RUNNING", "COMPLETED", "FAILED"])
+    jobs_list.add_argument("--limit", type=int, default=20)
+    jobs_list.set_defaults(func=cmd_jobs)
+
+    jobs_clear = jobs_sub.add_parser("clear", parents=[common], help="清空所有任务")
+    jobs_clear.add_argument(
+        "--yes",
+        action="store_true",
+        help="确认删除（不可恢复）",
+    )
+    jobs_clear.set_defaults(func=cmd_jobs)
 
     train = sub.add_parser("train", parents=[common], help="兜底训练（gm 不可用时）")
     train_sub = train.add_subparsers(dest="train_command", required=True)

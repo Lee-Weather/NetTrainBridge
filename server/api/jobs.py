@@ -2,10 +2,12 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 import database
 import job_data
+from api import checkpoint as checkpoint_api
+from api import logs as logs_api
 from models import (
     JobClaim,
     JobCreate,
@@ -175,6 +177,50 @@ async def list_jobs(
         return [_row_to_response(r) for r in rows]
     finally:
         conn.close()
+
+
+def clear_all_jobs_sync() -> dict:
+    """删除全部任务：DB 记录、指标、心跳、data/ 目录与内存缓存。"""
+    conn = database.get_connection()
+    try:
+        rows = conn.execute("SELECT id FROM jobs").fetchall()
+        db_job_ids = [row["id"] for row in rows]
+        conn.execute("DELETE FROM metrics")
+        conn.execute("DELETE FROM heartbeats")
+        conn.execute("DELETE FROM jobs")
+        conn.commit()
+    finally:
+        conn.close()
+
+    disk_job_ids = job_data.list_disk_job_ids()
+    all_job_ids = sorted(set(db_job_ids) | set(disk_job_ids))
+
+    removed_dirs = 0
+    for job_id in all_job_ids:
+        if job_data.delete_job_dir(job_id):
+            removed_dirs += 1
+        logs_api.drop_job_logs(job_id)
+        checkpoint_api.drop_upload_session(job_id)
+
+    logs_api.drop_all_logs()
+    checkpoint_api.drop_all_upload_sessions()
+
+    return {
+        "deleted_jobs": len(db_job_ids),
+        "deleted_dirs": removed_dirs,
+        "orphan_dirs": max(0, removed_dirs - len(db_job_ids)),
+    }
+
+
+@router.delete("")
+async def delete_all_jobs(confirm: bool = Query(False, description="必须为 true 才执行清空")):
+    """清空所有任务（数据库 + data/ 目录 + 内存缓存）。不可恢复。"""
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="destructive operation: pass ?confirm=true to delete all jobs",
+        )
+    return clear_all_jobs_sync()
 
 
 @router.post("", response_model=JobResponse, status_code=201)
