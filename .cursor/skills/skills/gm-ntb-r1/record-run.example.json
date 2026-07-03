@@ -1,0 +1,12 @@
+{
+  "mode": "C",
+  "test_source": "gm",
+  "run_name": "r1_3_test",
+  "task": "x1_dh_stand",
+  "commit_sha": "",
+  "gm_task_id": "",
+  "train_job_id": "",
+  "load_run": "",
+  "checkpoint": "",
+  "test_job_id": ""
+}

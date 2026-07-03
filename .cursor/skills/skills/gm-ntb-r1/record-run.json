@@ -1,0 +1,12 @@
+{
+  "mode": "E",
+  "test_source": "gm",
+  "run_name": "r1_3_test",
+  "task": "x1_dh_stand",
+  "commit_sha": "4108aa48c05a5cf85e0e74822a76c049cd837d0b",
+  "gm_task_id": "TASK_20260702_088",
+  "train_job_id": "",
+  "load_run": "2026-07-02_15-08-18r1_3_test",
+  "checkpoint": "50",
+  "test_job_id": "7a2a43fffccb"
+}

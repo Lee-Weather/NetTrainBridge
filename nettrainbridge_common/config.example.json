@@ -2,7 +2,9 @@
   "server_url": "http://47.103.63.175:8000",
   "api_token": "",
   "cli": {
-    "server_url": "http://47.103.63.175:8000"
+    "server_url": "http://47.103.63.175:8000",
+    "gm_api_key": "",
+    "gm_base_url": "https://internal.limxdynamics.com/dev-api"
   },
   "agent": {
     "server_url": "http://47.103.63.175:8000",

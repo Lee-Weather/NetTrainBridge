@@ -317,6 +317,10 @@ def cmd_test_run(args: argparse.Namespace) -> None:
             "--load-run 为必填（训练 logs 目录名，"
             "如 2026-01-14_09-58-10test_20_video）",
         )
+    if args.fetch_from_gm and not args.gm_task_id:
+        raise CLIError("--fetch-from-gm 仅用于 --gm-task-id 路径")
+    if args.fetch_from_gm and args.no_stage_checkpoint:
+        raise CLIError("--fetch-from-gm 与 --no-stage-checkpoint 无需同时使用")
 
     repo_url, commit_sha = _resolve_repo_commit(args)
     extra: dict[str, Any] = {
@@ -329,6 +333,12 @@ def cmd_test_run(args: argparse.Namespace) -> None:
         extra["gm_checkpoint"] = args.checkpoint
         if args.checkpoint.isdigit():
             extra["checkpoint"] = int(args.checkpoint)
+        if args.fetch_from_gm:
+            extra["fetch_mode"] = "gm"
+            extra["checkpoint_staged"] = False
+        else:
+            extra["fetch_mode"] = "server"
+            extra["checkpoint_staged"] = False
     else:
         extra["parent_train_job_id"] = args.train_job_id
         if not str(args.checkpoint).isdigit():
@@ -336,6 +346,24 @@ def cmd_test_run(args: argparse.Namespace) -> None:
         extra["checkpoint"] = int(args.checkpoint)
 
     data = _create_job(repo_url, commit_sha, **extra)
+    job_id = data["id"]
+
+    stage_gm = bool(
+        args.gm_task_id and not args.fetch_from_gm and not args.no_stage_checkpoint,
+    )
+    if stage_gm:
+        from nettrainbridge_cli.gm_stage import GmStageError, stage_checkpoint_from_gm
+
+        try:
+            staged = stage_checkpoint_from_gm(
+                job_id,
+                args.gm_task_id,
+                args.checkpoint,
+            )
+        except GmStageError as exc:
+            raise CLIError(f"gm checkpoint 上传 Server 失败: {exc}") from exc
+        if not args.json:
+            print(f"  已上传模型:  {staged.get('filename')} → Server")
 
     if args.json:
         print_json(data)
@@ -345,9 +373,15 @@ def cmd_test_run(args: argparse.Namespace) -> None:
         print(f"  task:        {args.task or 'x1_dh_stand'}")
         if data.get("gm_task_id"):
             print(f"  gm 任务:     {data.get('gm_task_id')}")
-            meta = request_json_optional("GET", f"/jobs/{data['id']}/meta")
+            meta = request_json_optional("GET", f"/jobs/{job_id}/meta")
             if meta and meta.get("gm_checkpoint"):
                 print(f"  gm ckpt:     {meta.get('gm_checkpoint')}")
+            if stage_gm:
+                print(f"  取模路径:    CLI → Server → Agent（pull）")
+            elif args.fetch_from_gm:
+                print(f"  取模路径:    Agent 直拉 gm（fetch，旧 5B）")
+            elif args.no_stage_checkpoint:
+                print(f"  取模路径:    请手动 ntb checkpoint stage-from-gm {job_id}")
         if data.get("parent_train_job_id"):
             print(f"  训练任务:    {data.get('parent_train_job_id')}")
             if extra.get("checkpoint") is not None:
@@ -355,7 +389,7 @@ def cmd_test_run(args: argparse.Namespace) -> None:
 
     if args.watch:
         watch_args = argparse.Namespace(
-            job_id=data["id"],
+            job_id=job_id,
             json=args.json,
             interval=args.interval,
             once=False,
@@ -408,6 +442,10 @@ def cmd_job(args: argparse.Namespace) -> None:
             fields.append(("checkpoint", meta.get("checkpoint")))
         if meta.get("gm_checkpoint"):
             fields.append(("gm checkpoint", meta.get("gm_checkpoint")))
+        if meta.get("fetch_mode"):
+            fields.append(("取模模式", meta.get("fetch_mode")))
+        if meta.get("checkpoint_staged") is not None:
+            fields.append(("checkpoint_staged", meta.get("checkpoint_staged")))
         if meta.get("model_filename"):
             fields.append(("模型文件", meta.get("model_filename")))
 
@@ -489,6 +527,39 @@ def cmd_checkpoint_download(args: argparse.Namespace) -> None:
         print_json({"job_id": args.job_id, "filename": filename, "path": str(dest), "size": size})
     else:
         print(f"已下载 checkpoint: {dest} ({_format_size(size)})")
+
+
+def cmd_checkpoint_upload(args: argparse.Namespace) -> None:
+    from nettrainbridge_cli.checkpoint_io import upload_checkpoint
+
+    path = Path(args.file)
+    result = upload_checkpoint(args.job_id, path)
+    filename = path.name
+    if args.json:
+        print_json({"job_id": args.job_id, "filename": filename, "result": result})
+    else:
+        status = result.get("status", "ok")
+        print(f"已上传 checkpoint: {filename} → job {args.job_id} ({status})")
+
+
+def cmd_checkpoint_stage_from_gm(args: argparse.Namespace) -> None:
+    from nettrainbridge_cli.gm_stage import GmStageError, stage_checkpoint_from_gm
+
+    try:
+        result = stage_checkpoint_from_gm(
+            args.job_id,
+            args.task_id,
+            args.checkpoint,
+        )
+    except GmStageError as exc:
+        raise CLIError(str(exc)) from exc
+    if args.json:
+        print_json(result)
+    else:
+        print(
+            f"已从 gm 上传 {result['filename']} "
+            f"(checkpoint={result['checkpoint']}) → job {args.job_id}",
+        )
 
 
 def _format_artifacts_table(files: list[dict]) -> str:
@@ -897,6 +968,16 @@ def build_parser() -> argparse.ArgumentParser:
         default="latest",
         help="gm checkpoint 选择（仅 --gm-task-id 时有效，默认 latest）",
     )
+    test_run.add_argument(
+        "--no-stage-checkpoint",
+        action="store_true",
+        help="不上传 gm 模型到 Server（需自行 stage 或配合 --fetch-from-gm）",
+    )
+    test_run.add_argument(
+        "--fetch-from-gm",
+        action="store_true",
+        help="训练机 Agent 直拉 gm（旧 5B 兜底，需训练机配置 gm_api_key）",
+    )
     test_run.set_defaults(func=cmd_test_run)
 
     trigger = sub.add_parser(
@@ -934,6 +1015,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="指定文件名（默认 meta 主模型或列表第一项）",
     )
     checkpoint_dl.set_defaults(func=cmd_checkpoint_download)
+
+    checkpoint_up = checkpoint_sub.add_parser("upload", parents=[common], help="上传 checkpoint 到 Server")
+    checkpoint_up.add_argument("job_id", help="任务 ID")
+    checkpoint_up.add_argument(
+        "-f",
+        "--file",
+        required=True,
+        help="本地 .pt 文件路径",
+    )
+    checkpoint_up.set_defaults(func=cmd_checkpoint_upload)
+
+    checkpoint_stage = checkpoint_sub.add_parser(
+        "stage-from-gm",
+        parents=[common],
+        help="从 gm 下载 checkpoint 并上传到 Server",
+    )
+    checkpoint_stage.add_argument("job_id", help="test job ID")
+    checkpoint_stage.add_argument("--task-id", required=True, dest="task_id", help="gm task_id")
+    checkpoint_stage.add_argument(
+        "--checkpoint",
+        default="latest",
+        help="checkpoint 说明（默认 latest）",
+    )
+    checkpoint_stage.set_defaults(func=cmd_checkpoint_stage_from_gm)
 
     artifacts = sub.add_parser("artifacts", parents=[common], help="测试产物（test job）")
     artifacts_sub = artifacts.add_subparsers(dest="artifacts_command", required=True)

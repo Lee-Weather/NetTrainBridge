@@ -6,7 +6,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -19,14 +19,39 @@ class GMClientError(Exception):
     """gm API 或下载失败。"""
 
 
-def _dig(obj: Any, *keys: str) -> Any:
-    """从嵌套 dict 中按多个 key 尝试取值。"""
-    if not isinstance(obj, dict):
+def _api_error_message(payload: Any) -> str | None:
+    """gm 常在 HTTP 200 下用 body.code / success 表示失败。"""
+    if not isinstance(payload, dict):
         return None
-    for key in keys:
-        if key in obj and obj[key] is not None:
-            return obj[key]
+    code = payload.get("code")
+    success = payload.get("success")
+    if success is False or (isinstance(code, int) and code not in (0, 200)):
+        msg = payload.get("msg") or payload.get("message") or payload.get("msgEn")
+        return str(msg or f"gm API 错误 code={code}")
     return None
+
+
+def _unwrap_payload(payload: Any) -> Any:
+    """展开 gm 响应外层（兼容 CLI 与直连 API 多种嵌套）。"""
+    if not isinstance(payload, dict):
+        return payload
+
+    err = _api_error_message(payload)
+    if err:
+        raise GMClientError(err)
+
+    for key in ("data", "result"):
+        inner = payload.get(key)
+        if inner is None or inner == "":
+            continue
+        if isinstance(inner, dict):
+            nested_err = _api_error_message(inner)
+            if nested_err:
+                raise GMClientError(nested_err)
+            return inner
+        if isinstance(inner, list):
+            return inner
+    return payload
 
 
 def _extract_model_list(payload: Any) -> list[dict]:
@@ -66,13 +91,14 @@ class GMClient:
     def _headers(self) -> dict[str, str]:
         if not self.config.gm_api_key:
             raise GMClientError("GM_API_KEY 未配置")
+        # gm OpenAPI 与 gm-cli 一致：X-Api-Key（非 Bearer）
         return {
-            "Authorization": f"Bearer {self.config.gm_api_key}",
+            "X-Api-Key": self.config.gm_api_key,
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
 
-    def _client(self) -> httpx.Client:
+    def _api_client(self) -> httpx.Client:
         kwargs: dict[str, Any] = {
             "timeout": self.config.request_timeout,
             "headers": self._headers(),
@@ -82,6 +108,40 @@ class GMClient:
         elif self.config.proxy:
             kwargs["proxy"] = self.config.proxy
         return httpx.Client(**kwargs)
+
+    def _download_client(self, *, proxy: str | None) -> httpx.Client:
+        """OSS 预签名直链：不带 gm 鉴权头（附加头易导致 403）。"""
+        kwargs: dict[str, Any] = {
+            "timeout": self.config.request_timeout,
+            "follow_redirects": True,
+        }
+        if self._transport is not None:
+            kwargs["transport"] = self._transport
+        elif proxy:
+            kwargs["proxy"] = proxy
+        return httpx.Client(**kwargs)
+
+    @staticmethod
+    def _url_host(url: str) -> str:
+        try:
+            return urlparse(url).netloc.lower()
+        except Exception:
+            return ""
+
+    def _is_gm_api_host(self, url: str) -> bool:
+        base_host = self._url_host(self.config.gm_base_url or "")
+        if not base_host:
+            return False
+        return self._url_host(url) == base_host
+
+    def _download_proxy_attempts(self, url: str) -> list[str | None]:
+        """外网 OSS 默认直连；失败后再试公司代理。"""
+        if self._is_gm_api_host(url):
+            return [self.config.proxy or None]
+        attempts: list[str | None] = [None]
+        if self.config.proxy:
+            attempts.append(self.config.proxy)
+        return attempts
 
     def list_models(
         self,
@@ -107,40 +167,75 @@ class GMClient:
         url = self._api_url("/task/model/info")
         logger.info("gm list_models task_id=%s checkpoint=%s", task_id, checkpoint or "latest")
 
-        with self._client() as client:
+        with self._api_client() as client:
             response = client.post(url, json=body)
             if response.status_code >= 400:
                 raise GMClientError(
                     f"gm model list 失败 HTTP {response.status_code}: {response.text[:500]}",
                 )
-            payload = response.json()
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise GMClientError(
+                    f"gm model list 响应非 JSON: {response.text[:200]}",
+                ) from exc
 
-        data = _dig(payload, "data", "result") or payload
+        data = _unwrap_payload(payload)
         models = _extract_model_list(data)
         if not models and isinstance(data, dict):
             models = _extract_model_list(payload)
+        if not models:
+            logger.warning(
+                "gm list_models 空列表 task_id=%s url=%s keys=%s",
+                task_id,
+                url,
+                list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__,
+            )
         return models
 
     def download(self, url: str, dest: Path) -> Path:
-        """从 policUrlDown 下载模型到 dest。"""
+        """从 policUrlDown 等直链下载模型到 dest（OSS 预签名，不走 gm 鉴权头）。"""
         if not url:
             raise GMClientError("下载 URL 为空")
+        if not url.startswith(("http://", "https://")):
+            raise GMClientError(f"不支持的下载 URL（需 http/https 直链）: {url[:120]}")
+
         dest.parent.mkdir(parents=True, exist_ok=True)
-        logger.info("gm download -> %s", dest)
+        host = self._url_host(url)
+        logger.info("gm download host=%s -> %s", host or "?", dest)
 
-        with self._client() as client:
-            with client.stream("GET", url) as response:
-                if response.status_code >= 400:
-                    raise GMClientError(
-                        f"gm 模型下载失败 HTTP {response.status_code}",
-                    )
-                with open(dest, "wb") as f:
-                    for chunk in response.iter_bytes(chunk_size=1024 * 1024):
-                        f.write(chunk)
+        errors: list[str] = []
+        attempts = self._download_proxy_attempts(url)
+        for idx, proxy in enumerate(attempts):
+            label = "direct" if not proxy else "proxy"
+            try:
+                with self._download_client(proxy=proxy) as client:
+                    with client.stream("GET", url) as response:
+                        if response.status_code >= 400:
+                            raise GMClientError(
+                                f"gm 模型下载失败 HTTP {response.status_code} "
+                                f"({label}, host={host})",
+                            )
+                        with open(dest, "wb") as f:
+                            for chunk in response.iter_bytes(chunk_size=1024 * 1024):
+                                f.write(chunk)
+                if dest.stat().st_size == 0:
+                    raise GMClientError(f"下载文件为空: {dest}")
+                return dest
+            except GMClientError as exc:
+                errors.append(f"{label}: {exc}")
+                msg = str(exc)
+                retryable = any(code in msg for code in ("403", "407", "502", "503", "504"))
+                if not retryable or idx == len(attempts) - 1:
+                    break
+                logger.warning("gm download retry after %s failed: %s", label, exc)
 
-        if dest.stat().st_size == 0:
-            raise GMClientError(f"下载文件为空: {dest}")
-        return dest
+        hint = (
+            "（外网 OSS 直链对公司代理可能返回 403，已尝试直连与代理）"
+            if self.config.proxy
+            else ""
+        )
+        raise GMClientError(f"gm 模型下载失败{hint}: {'; '.join(errors)}")
 
 
 _CHECKPOINT_NUM = re.compile(r"(\d+)")
@@ -198,7 +293,11 @@ def select_model(models: list[dict], specifier: str) -> dict:
 
 
 def model_download_url(model: dict) -> str:
-    """优先 policUrlDown，其次 policUrl。"""
+    """优先 policUrlDown，其次 convertUrlDown（须为 http 直链）。"""
+    for key in ("policUrlDown", "convertUrlDown"):
+        url = model.get(key)
+        if url and str(url).startswith(("http://", "https://")):
+            return str(url)
     url = model.get("policUrlDown") or model.get("policUrl")
     if not url:
         raise GMClientError("checkpoint 条目缺少 policUrlDown")
@@ -206,7 +305,12 @@ def model_download_url(model: dict) -> str:
         base = (model.get("_gm_base_url") or "").rstrip("/")
         if base:
             return urljoin(f"{base}/", url.lstrip("/"))
-    return str(url)
+    text = str(url)
+    if text.startswith(("http://", "https://")):
+        return text
+    raise GMClientError(
+        "checkpoint 仅有存储相对路径，缺少可下载的 policUrlDown 直链",
+    )
 
 
 def model_filename(model: dict, *, fallback: str = "model.pt") -> str:

@@ -102,6 +102,12 @@ def _build_initial_meta(
         meta["checkpoint"] = req.checkpoint
     if req.parent_train_job_id:
         meta["parent_train_job_id"] = req.parent_train_job_id
+    if req.gm_task_id and req.job_type == JobType.TEST:
+        meta["fetch_mode"] = req.fetch_mode or "server"
+    elif req.fetch_mode:
+        meta["fetch_mode"] = req.fetch_mode
+    if req.checkpoint_staged is not None:
+        meta["checkpoint_staged"] = req.checkpoint_staged
     if phase:
         meta["phase"] = phase
     return meta

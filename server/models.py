@@ -29,6 +29,7 @@ class TrainSource(str, Enum):
 class JobPhase(str, Enum):
     SYNC = "sync"
     FETCH = "fetch"
+    PULL = "pull"
     TEST = "test"
     DONE = "done"
 
@@ -49,6 +50,8 @@ class JobCreate(BaseModel):
     checkpoint: Optional[int] = None
     parent_train_job_id: Optional[str] = None
     phase: Optional[JobPhase] = None
+    checkpoint_staged: Optional[bool] = None
+    fetch_mode: Optional[str] = None  # server | gm
 
 
 class JobClaim(BaseModel):

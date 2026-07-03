@@ -210,6 +210,16 @@ class APIClient:
 
     # ── 模型上传接口 ──
 
+    async def list_checkpoints(self, job_id: str) -> list[dict]:
+        """列出 Server 上该任务的 checkpoint 文件。"""
+        response = await self._request("GET", f"/jobs/{job_id}/checkpoint")
+        data = response.json()
+        if isinstance(data, dict):
+            files = data.get("files")
+            if isinstance(files, list):
+                return files
+        return []
+
     async def upload_checkpoint(
         self,
         job_id: str,

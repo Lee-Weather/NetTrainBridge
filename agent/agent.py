@@ -18,6 +18,7 @@ from checkpoint_layout import (
 )
 from config import AgentConfig
 from fetch_runner import FetchRunner, FetchRunnerError
+from pull_runner import PullRunnerError, pull_checkpoint_to_logs
 from test_context import resolve_test_context
 from heartbeat import create_heartbeat_reporter
 from job_runner import JobRunner, JobRunnerError
@@ -181,8 +182,15 @@ class Agent:
             return
         await self._run_train_job(job)
 
+    async def _gm_phase_after_sync(self, job_id: str) -> str:
+        """gm test：sync 后进入 pull（默认）或 fetch（兜底直拉 gm）。"""
+        meta = await self.api_client.get_job_meta(job_id) or {}
+        if meta.get("fetch_mode") == "gm":
+            return "fetch"
+        return "pull"
+
     async def _run_test_job(self, job: dict):
-        """test job：sync → fetch(gm) → sim2sim → COMPLETED。"""
+        """test job：sync → pull/fetch(gm) → sim2sim → COMPLETED。"""
         job_id = job["id"]
         repo_url = job["repo_url"]
         commit_sha = job["commit_sha"]
@@ -199,11 +207,53 @@ class Agent:
                 )
                 logger.info("test job %s 代码同步完成", job_id)
                 if train_source == "gm":
-                    updated = await self.api_client.update_phase(job_id, "fetch")
-                    phase = updated.get("phase", "fetch")
+                    next_phase = await self._gm_phase_after_sync(job_id)
+                    updated = await self.api_client.update_phase(job_id, next_phase)
+                    phase = updated.get("phase", next_phase)
                 else:
                     await self.api_client.update_phase(job_id, "test")
                     phase = "test"
+
+            if phase == "pull" and train_source == "gm":
+                meta = await self.api_client.get_job_meta(job_id) or {}
+                task = meta.get("task") or DEFAULT_TEST_TASK
+                load_run = meta.get("load_run")
+                if not load_run:
+                    raise PullRunnerError(
+                        "test job 缺少 load_run（请 ntb test run --load-run）",
+                    )
+
+                model_path = await pull_checkpoint_to_logs(
+                    self.api_client,
+                    job_id,
+                    job_dir,
+                    meta,
+                )
+                checkpoint_int = meta.get("checkpoint")
+                if checkpoint_int is None:
+                    checkpoint_int = checkpoint_int_from_spec(
+                        meta.get("gm_checkpoint", "latest"),
+                        model_path.name,
+                    )
+                rel_model = model_path.relative_to(job_dir)
+                await self.api_client.put_job_meta(
+                    job_id,
+                    {
+                        "model_filename": model_path.name,
+                        "model_path": str(rel_model),
+                        "task": task,
+                        "load_run": load_run,
+                        "checkpoint": int(checkpoint_int),
+                        "checkpoint_staged": True,
+                    },
+                )
+                await self.api_client.update_phase(job_id, "test")
+                phase = "test"
+                logger.info(
+                    "test job %s PULL 完成，已落盘 %s",
+                    job_id,
+                    model_path.name,
+                )
 
             if phase == "fetch" and train_source == "gm":
                 gm_task_id = job.get("gm_task_id")
@@ -267,6 +317,11 @@ class Agent:
             logger.error("test job %s FETCH 失败: %s", job_id, e)
             await self._update_status_safe(
                 job_id, "FAILED", error_msg=f"FETCH failed: {e}",
+            )
+        except PullRunnerError as e:
+            logger.error("test job %s PULL 失败: %s", job_id, e)
+            await self._update_status_safe(
+                job_id, "FAILED", error_msg=f"PULL failed: {e}",
             )
         except APIError as e:
             logger.error("test job %s API 失败: %s", job_id, e)
