@@ -294,7 +294,7 @@ ntb artifacts download <test_job_id> -o .\test-artifacts.zip
 ntb checkpoint list <test_job_id>
 ```
 
-`summary.json` 中应为 `"mode": "real"`，含 `success_rate`、`final_reward`。
+`artifacts` zip 应含最新 `isaac_diag_*.csv`（原始诊断数据）；`ntb metrics` 仍可看 test 曲线。汇总指标请本地用 `isaac-diag-eval` 分析 CSV。`ntb job` / meta 可能含 `test_artifact` 字段（CSV 文件名）。
 
 ---
 
@@ -355,7 +355,9 @@ powershell -File .cursor\skills\gm-ntb-r1-e2e\scripts\verify-test.ps1 <test_job_
 | gm test 默认路径 | **CLI → Server → Agent**；`test run --gm-task-id` 自动 stage |
 | 缺 `load_run` 400 | `ntb test run` 必须带 `--load-run` |
 | ntb 路径 checkpoint 报错 | 使用整数 `--checkpoint 3000`，不用 `latest` |
-| summary 仍是 mock | Agent 勿设 `NETTRAINBRIDGE_TEST_COMMAND=...--mock` |
+| artifacts 无 `isaac_diag_*.csv` | test 须 COMPLETED；play 须产出 CSV；失败时只有 `ntb logs` |
+| metrics 含 `"mock": true` | Agent 勿设 `NETTRAINBRIDGE_TEST_COMMAND=...--mock` |
+| play headless 录屏崩溃 | 训练仓库 `play.py` 须支持 `NETTRAINBRIDGE_PLAY_RENDER=0`（R1-1 补丁） |
 | `ntb` 找不到 | 确认 PATH 或 `pip install -e ".[dev]"` |
 
 ---

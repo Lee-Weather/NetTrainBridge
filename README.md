@@ -159,8 +159,9 @@ sequenceDiagram
     A->>S: GET /checkpoint（pull 阶段）
     A->>A: logs/.../exported_data/{load_run}/model_*.pt
     A->>A: play.py / test_with_metrics.py（Isaac sim2sim）
-    A->>S: 上传 test/summary.json、metrics、artifacts
-    H->>S: ntb watch / ntb job（查测试结果）
+    A->>S: POST /metrics（流式 test 指标）
+    A->>S: 上传 test/isaac_diag_*.csv（最新一条）
+    H->>S: ntb watch / ntb metrics / ntb artifacts download
 ```
 
 可选旧路径：`ntb test run ... --fetch-from-gm` 时 Agent 仍直拉 gm（5B 兜底）。
@@ -201,6 +202,8 @@ PENDING → ASSIGNED → RUNNING → COMPLETED / FAILED
 | 任务元数据、指标时序 | 云 SQLite | Server（收 Agent POST） | `ntb jobs` / `watch` |
 | 实时日志（最近 5000 行） | 云内存 | Agent `POST /logs` | `ntb logs` / `logs -f`（SSE） |
 | checkpoint、meta.json、test 产物 | 云磁盘 `data/{job_id}/` | Agent 上传 | `ntb job`、HTTP 下载 |
+| test 流式指标 | 云 SQLite | Agent `POST /metrics` | `ntb metrics` / `watch` |
+| sim2sim 诊断 CSV | `data/{job_id}/test/isaac_diag_*.csv` | Agent test 成功后上传 | `ntb artifacts download` |
 | 中间 checkpoint | 训练机本地 workspace | 训练脚本 | Agent 断点续训（不上传） |
 | 训练代码 | GitHub | 开发者 push | Agent clone |
 
@@ -429,7 +432,7 @@ bash test_cli.sh http://localhost:8000
 | `ntb checkpoint upload` | 上传 .pt 到 Server |
 | `ntb checkpoint stage-from-gm` | 从 gm 取模并上传到指定 job |
 | `ntb checkpoint list/download` | 列出 / 下载 Server 上的模型 |
-| `ntb artifacts list/download` | test 产物 |
+| `ntb artifacts list/download` | test 产物（`isaac_diag_*.csv`） |
 | `ntb jobs` | 任务列表 |
 | `ntb job <id>` | 单任务详情（含 meta 训练来源/模型） |
 | `ntb trigger` | 已弃用，等同 `train run` |

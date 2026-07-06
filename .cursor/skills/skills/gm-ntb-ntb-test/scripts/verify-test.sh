@@ -68,16 +68,21 @@ if echo "$METRICS" | grep -q '"kind".*"test"\|"kind": "test"'; then ok "metrics 
 if echo "$METRICS" | grep -q '"mock"'; then bad "metrics has mock"; else ok "metrics no mock"; fi
 
 ARTS=$(bash "$NTB_WRAPPER" artifacts list "$TEST_ID" 2>/dev/null || true)
-echo "$ARTS" | grep -q "summary.json" && ok "summary.json" || bad "no summary.json"
-echo "$ARTS" | grep -q "metrics.jsonl" && ok "metrics.jsonl" || bad "no metrics.jsonl"
+echo "$ARTS" | grep -q "isaac_diag_.*\.csv" && ok "isaac_diag csv" || bad "no isaac_diag csv"
+echo "$ARTS" | grep -q "summary.json" && bad "unexpected summary.json" || ok "no summary.json"
+echo "$ARTS" | grep -q "metrics.jsonl" && bad "unexpected metrics.jsonl in artifacts" || ok "no metrics.jsonl in artifacts"
 
 TMPZIP=$(mktemp /tmp/ntb-verify-XXXXXX.zip)
 if bash "$NTB_WRAPPER" artifacts download "$TEST_ID" -o "$TMPZIP" >/dev/null 2>&1; then
   ok "artifacts download"
-  SUMMARY=$(unzip -p "$TMPZIP" summary.json 2>/dev/null || true)
-  echo "$SUMMARY" | grep -q '"mode".*"real"' && ok "summary mode=real" || bad "summary not real"
-  echo "$SUMMARY" | grep -q "success_rate" && ok "success_rate" || bad "missing success_rate"
-  echo "$SUMMARY" | grep -q "final_reward" && ok "final_reward" || bad "missing final_reward"
+  CSV=$(unzip -Z1 "$TMPZIP" 2>/dev/null | grep 'isaac_diag_.*\.csv' | head -1 || true)
+  if [[ -n "$CSV" ]]; then
+    ok "zip contains csv: $CSV"
+    HEADER=$(unzip -p "$TMPZIP" "$CSV" 2>/dev/null | head -1 || true)
+    echo "$HEADER" | grep -q "base_lin_vel_x" && ok "csv header valid" || bad "csv header invalid"
+  else
+    bad "zip missing isaac_diag csv"
+  fi
 else
   bad "artifacts download failed"
 fi

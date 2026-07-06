@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import logging
 import signal
 import subprocess
@@ -28,6 +29,15 @@ from metrics_reader import MetricsReader
 logger = logging.getLogger("nettrainbridge.agent")
 
 CLAIMABLE_JOB_TYPES = frozenset({"train", "sync", "test"})
+
+
+def _summary_is_mock(summary_path: Path) -> bool:
+    """判断 test/summary.json 是否为 Mock 模式。"""
+    try:
+        data = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(data, dict) and data.get("mode") == "mock"
 
 
 def _job_type(job: dict) -> str:
@@ -437,7 +447,7 @@ class Agent:
             )
 
     async def _on_test_complete(self, exit_code: int):
-        """sim2sim 结束：上报指标、上传 test 产物、COMPLETED。"""
+        """sim2sim 结束：刷指标、上传 test CSV、COMPLETED。"""
         job = self._running_job
         if job is None:
             return
@@ -445,36 +455,48 @@ class Agent:
         await self._flush_logs_and_metrics()
 
         if exit_code == 0:
-            summary = self.job_runner.get_test_summary_file(job.job_dir)
-            if summary.is_file():
+            meta_patch = {
+                "job_type": "test",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            csv_path = self.job_runner.find_test_csv(job.job_dir)
+            if csv_path is not None:
                 try:
-                    await self.api_client.upload_test_file(job.job_id, summary)
-                    logger.info("test summary 已上传: %s", summary.name)
+                    await self.api_client.upload_test_file(job.job_id, csv_path)
+                    logger.info("test CSV 已上传: %s", csv_path.name)
+                    meta_patch["test_artifact"] = csv_path.name
+                    meta_patch["test_artifact_size"] = csv_path.stat().st_size
                 except APIError as e:
-                    logger.error("test summary 上传失败: %s", e)
+                    logger.error("test CSV 上传失败: %s", e)
                     await self._update_status_safe(
                         job.job_id, "FAILED",
-                        error_msg=f"test summary upload failed: {e}",
+                        error_msg=f"test csv upload failed: {e}",
+                    )
+                    self._clear_running_job()
+                    return
+            else:
+                summary = self.job_runner.get_test_summary_file(job.job_dir)
+                if summary.is_file() and _summary_is_mock(summary):
+                    try:
+                        await self.api_client.upload_test_file(job.job_id, summary)
+                        logger.info("mock test summary 已上传: %s", summary.name)
+                    except APIError as e:
+                        logger.error("mock test summary 上传失败: %s", e)
+                        await self._update_status_safe(
+                            job.job_id, "FAILED",
+                            error_msg=f"mock test summary upload failed: {e}",
+                        )
+                        self._clear_running_job()
+                        return
+                else:
+                    await self._update_status_safe(
+                        job.job_id, "FAILED",
+                        error_msg="no isaac_diag csv found for real test",
                     )
                     self._clear_running_job()
                     return
 
-            metrics_file = self.job_runner.get_metrics_file(job.job_dir)
-            if metrics_file.is_file():
-                try:
-                    await self.api_client.upload_test_file(
-                        job.job_id, metrics_file, dest_name="metrics.jsonl",
-                    )
-                except APIError as e:
-                    logger.warning("test metrics.jsonl 上传失败: %s", e)
-
-            await self.api_client.put_job_meta(
-                job.job_id,
-                {
-                    "job_type": "test",
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
+            await self.api_client.put_job_meta(job.job_id, meta_patch)
             await self.api_client.update_phase(job.job_id, "done")
             await self._update_status_safe(job.job_id, "COMPLETED")
             logger.info("test job %s 已完成", job.job_id)

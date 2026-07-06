@@ -75,20 +75,21 @@ else
 fi
 
 ARTS=$($NTB artifacts list "$TEST_ID" 2>/dev/null || true)
-echo "$ARTS" | grep -q "summary.json" && ok "artifacts 含 summary.json" || bad "artifacts 无 summary.json"
-echo "$ARTS" | grep -q "metrics.jsonl" && ok "artifacts 含 metrics.jsonl" || bad "artifacts 无 metrics.jsonl"
+echo "$ARTS" | grep -q "isaac_diag_.*\.csv" && ok "artifacts 含 isaac_diag csv" || bad "artifacts 无 isaac_diag csv"
+echo "$ARTS" | grep -q "summary.json" && bad "artifacts 不应含 summary.json" || ok "artifacts 无 summary.json"
+echo "$ARTS" | grep -q "metrics.jsonl" && bad "artifacts 不应含 metrics.jsonl" || ok "artifacts 无 metrics.jsonl"
 
 TMPZIP=$(mktemp /tmp/ntb-verify-XXXXXX.zip)
 if $NTB artifacts download "$TEST_ID" -o "$TMPZIP" >/dev/null 2>&1; then
   ok "artifacts download"
-  SUMMARY=$(unzip -p "$TMPZIP" summary.json 2>/dev/null || true)
-  if echo "$SUMMARY" | grep -q '"mode".*"real"'; then
-    ok "summary mode=real"
+  CSV=$(unzip -Z1 "$TMPZIP" 2>/dev/null | grep 'isaac_diag_.*\.csv' | head -1 || true)
+  if [[ -n "$CSV" ]]; then
+    ok "zip 含 csv: $CSV"
+    HEADER=$(unzip -p "$TMPZIP" "$CSV" 2>/dev/null | head -1 || true)
+    echo "$HEADER" | grep -q "base_lin_vel_x" && ok "csv 表头有效" || bad "csv 表头无效"
   else
-    bad "summary 非 real（可能仍是 mock）"
+    bad "zip 缺少 isaac_diag csv"
   fi
-  echo "$SUMMARY" | grep -q "success_rate" && ok "summary 含 success_rate" || bad "summary 缺 success_rate"
-  echo "$SUMMARY" | grep -q "final_reward" && ok "summary 含 final_reward" || bad "summary 缺 final_reward"
 else
   bad "artifacts download 失败"
 fi

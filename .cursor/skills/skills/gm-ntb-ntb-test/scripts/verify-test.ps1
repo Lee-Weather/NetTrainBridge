@@ -66,8 +66,9 @@ if ($metrics -match "test") { Ok "metrics has test" } else { Bad "metrics no tes
 if ($metrics -match '"mock"') { Bad "metrics has mock" } else { Ok "metrics no mock" }
 
 $arts = Invoke-Ntb artifacts list $TestId 2>$null
-if ($arts -match "summary.json") { Ok "artifacts has summary.json" } else { Bad "no summary.json" }
-if ($arts -match "metrics.jsonl") { Ok "artifacts has metrics.jsonl" } else { Bad "no metrics.jsonl" }
+if ($arts -match "isaac_diag_.*\.csv") { Ok "artifacts has isaac_diag csv" } else { Bad "no isaac_diag csv" }
+if ($arts -match "summary.json") { Bad "unexpected summary.json" } else { Ok "no summary.json" }
+if ($arts -match "metrics.jsonl") { Bad "unexpected metrics.jsonl in artifacts" } else { Ok "no metrics.jsonl in artifacts" }
 
 $tmpZip = Join-Path $env:TEMP "ntb-verify-$TestId.zip"
 try {
@@ -75,16 +76,15 @@ try {
     Ok "artifacts download"
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($tmpZip)
-    $entry = $zip.Entries | Where-Object { $_.Name -eq "summary.json" } | Select-Object -First 1
+    $entry = $zip.Entries | Where-Object { $_.Name -match "^isaac_diag_.*\.csv$" } | Select-Object -First 1
     if ($entry) {
+        Ok "zip has csv: $($entry.Name)"
         $reader = New-Object System.IO.StreamReader($entry.Open())
-        $summary = $reader.ReadToEnd()
+        $header = $reader.ReadLine()
         $reader.Close()
-        if ($summary -match '"mode".*"real"') { Ok "summary mode=real" } else { Bad "summary not real" }
-        if ($summary -match "success_rate") { Ok "summary has success_rate" } else { Bad "summary missing success_rate" }
-        if ($summary -match "final_reward") { Ok "summary has final_reward" } else { Bad "summary missing final_reward" }
+        if ($header -match "base_lin_vel_x") { Ok "csv header valid" } else { Bad "csv header invalid" }
     } else {
-        Bad "no summary.json in zip"
+        Bad "zip missing isaac_diag csv"
     }
     $zip.Dispose()
 } catch {

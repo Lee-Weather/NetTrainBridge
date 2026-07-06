@@ -156,7 +156,7 @@ class JobRunner:
             "GRADMOTION_METRICS_FILE": str(metrics_file),
         }
 
-        cmd = self._wrap_conda(shlex.split(train_cmd), extra_env=train_env)
+        cmd = self._wrap_conda(shlex.split(train_cmd))
 
         logger.info("启动训练: %s", shlex.join(cmd))
 
@@ -212,7 +212,7 @@ class JobRunner:
             "NETTRAINBRIDGE_PLAY_LOG_CSV": "1",
         }
 
-        cmd = self._wrap_conda(shlex.split(test_cmd), extra_env=test_env)
+        cmd = self._wrap_conda(shlex.split(test_cmd))
         log_file = job_dir / "test" / "test.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -281,27 +281,20 @@ class JobRunner:
 
     # ── 辅助方法 ──
 
-    def _wrap_conda(
-        self,
-        cmd: list[str],
-        extra_env: dict[str, str] | None = None,
-    ) -> list[str]:
+    def _wrap_conda(self, cmd: list[str]) -> list[str]:
         """在指定 conda 环境中执行命令。
 
-        extra_env 通过 ``conda run -e KEY=VALUE`` 传入，避免部分 conda 版本
-        不把 Popen env 转发给 ``conda run`` 子进程（导致 METRICS_FILE 丢失）。
+        环境变量（如 NETTRAINBRIDGE_METRICS_FILE）由调用方通过
+        ``subprocess.Popen(..., env=...)`` 传入；``conda run`` 会转发给子进程。
+        勿使用 ``conda run -e``：当前 conda 版本均不支持该参数。
         """
         if not self.config.conda_env:
             return cmd
-        conda_cmd = [
+        return [
             "conda", "run", "-n", self.config.conda_env,
             "--no-capture-output",
+            *cmd,
         ]
-        if extra_env:
-            for key, value in extra_env.items():
-                conda_cmd.extend(["-e", f"{key}={value}"])
-        conda_cmd.extend(cmd)
-        return conda_cmd
 
     def _run(
         self,
@@ -348,6 +341,16 @@ class JobRunner:
     def get_test_summary_file(self, job_dir: Path) -> Path:
         """Mock 脚本产出的 summary.json（metrics 同级 test/ 目录）。"""
         return job_dir / "test" / "summary.json"
+
+    def find_test_csv(self, job_dir: Path) -> Optional[Path]:
+        """返回 test/isaac_diag_*.csv 中最新文件（mtime）。"""
+        test_dir = job_dir / "test"
+        if not test_dir.is_dir():
+            return None
+        candidates = list(test_dir.glob("isaac_diag_*.csv"))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.stat().st_mtime)
 
     def get_metrics_file(self, job_dir: Path) -> Path:
         """获取指标文件路径。"""

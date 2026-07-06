@@ -64,8 +64,9 @@ if ($metrics -match "test") { Ok "metrics 含 test" } else { Bad "metrics 无 te
 if ($metrics -match '"mock"') { Bad "metrics 含 mock" } else { Ok "metrics 无 mock" }
 
 $arts = & ntb artifacts list $TestId 2>$null
-if ($arts -match "summary.json") { Ok "artifacts 含 summary.json" } else { Bad "artifacts 无 summary.json" }
-if ($arts -match "metrics.jsonl") { Ok "artifacts 含 metrics.jsonl" } else { Bad "artifacts 无 metrics.jsonl" }
+if ($arts -match "isaac_diag_.*\.csv") { Ok "artifacts 含 isaac_diag csv" } else { Bad "artifacts 无 isaac_diag csv" }
+if ($arts -match "summary.json") { Bad "artifacts 不应含 summary.json" } else { Ok "artifacts 无 summary.json" }
+if ($arts -match "metrics.jsonl") { Bad "artifacts 不应含 metrics.jsonl" } else { Ok "artifacts 无 metrics.jsonl" }
 
 $tmpZip = Join-Path $env:TEMP "ntb-verify-$TestId.zip"
 try {
@@ -73,16 +74,15 @@ try {
     Ok "artifacts download"
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($tmpZip)
-    $entry = $zip.Entries | Where-Object { $_.Name -eq "summary.json" } | Select-Object -First 1
+    $entry = $zip.Entries | Where-Object { $_.Name -match "^isaac_diag_.*\.csv$" } | Select-Object -First 1
     if ($entry) {
+        Ok "zip 含 csv: $($entry.Name)"
         $reader = New-Object System.IO.StreamReader($entry.Open())
-        $summary = $reader.ReadToEnd()
+        $header = $reader.ReadLine()
         $reader.Close()
-        if ($summary -match '"mode".*"real"') { Ok "summary mode=real" } else { Bad "summary 非 real" }
-        if ($summary -match "success_rate") { Ok "summary 含 success_rate" } else { Bad "summary 缺 success_rate" }
-        if ($summary -match "final_reward") { Ok "summary 含 final_reward" } else { Bad "summary 缺 final_reward" }
+        if ($header -match "base_lin_vel_x") { Ok "csv 表头有效" } else { Bad "csv 表头无效" }
     } else {
-        Bad "zip 内无 summary.json"
+        Bad "zip 内无 isaac_diag csv"
     }
     $zip.Dispose()
 } catch {
