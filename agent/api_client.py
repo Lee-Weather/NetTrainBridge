@@ -97,6 +97,21 @@ class APIClient:
         response = await self._request("GET", f"/jobs/{job_id}")
         return response.json()
 
+    async def get_job_optional(self, job_id: str) -> dict | None:
+        """查询任务；Server 无此 job 时返回 None（不抛异常）。"""
+        client = await self._get_client()
+        response = await client.request("GET", f"/jobs/{job_id}")
+        if response.status_code == 404:
+            return None
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise APIError(
+                f"请求失败: GET /jobs/{job_id} -> {e.response.status_code}: {e.response.text}",
+                status_code=e.response.status_code,
+            ) from e
+        return response.json()
+
     async def claim_job(self, job_id: str) -> dict:
         """抢占任务。"""
         response = await self._request(

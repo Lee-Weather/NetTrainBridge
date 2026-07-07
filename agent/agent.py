@@ -4,6 +4,9 @@ import asyncio
 import functools
 import json
 import logging
+import os
+import re
+import shutil
 import signal
 import subprocess
 from dataclasses import dataclass
@@ -29,6 +32,7 @@ from metrics_reader import MetricsReader
 logger = logging.getLogger("nettrainbridge.agent")
 
 CLAIMABLE_JOB_TYPES = frozenset({"train", "sync", "test"})
+_JOB_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 
 
 def _summary_is_mock(summary_path: Path) -> bool:
@@ -104,6 +108,7 @@ class Agent:
             self.config.poll_interval,
         )
 
+        await self._align_workspace_with_server()
         await self._recover_interrupted_jobs()
 
         await asyncio.gather(
@@ -642,6 +647,40 @@ class Agent:
 
     # ── 崩溃恢复 ──
 
+    def _workspace_align_enabled(self) -> bool:
+        raw = (os.environ.get("NETTRAINBRIDGE_WORKSPACE_ALIGN") or "1").strip().lower()
+        return raw not in ("0", "false", "no", "off")
+
+    async def _align_workspace_with_server(self):
+        """启动时与 Server 对齐：清理云上已不存在的本地 job 目录。"""
+        if not self._workspace_align_enabled():
+            logger.info("已跳过 workspace 对齐（NETTRAINBRIDGE_WORKSPACE_ALIGN=0）")
+            return
+
+        workspace = Path(self.config.workspace)
+        if not workspace.is_dir():
+            return
+
+        pruned = 0
+        kept = 0
+        for job_dir in sorted(workspace.iterdir()):
+            if not job_dir.is_dir():
+                continue
+            job_id = job_dir.name
+            if not _JOB_ID_RE.fullmatch(job_id):
+                continue
+
+            job = await self.api_client.get_job_optional(job_id)
+            if job is None:
+                logger.info("清理 Server 不存在的本地任务目录: %s", job_id)
+                await _run_in_thread(shutil.rmtree, job_dir, True)
+                pruned += 1
+            else:
+                kept += 1
+
+        if pruned or kept:
+            logger.info("workspace 与 Server 对齐完成: 保留 %d, 清理孤儿 %d", kept, pruned)
+
     async def _recover_interrupted_jobs(self):
         """启动时恢复本 Agent 未完成的任务。"""
         workspace = Path(self.config.workspace)
@@ -653,9 +692,8 @@ class Agent:
                 continue
 
             job_id = job_dir.name
-            try:
-                job = await self.api_client.get_job(job_id)
-            except APIError:
+            job = await self.api_client.get_job_optional(job_id)
+            if job is None:
                 continue
 
             if job.get("agent_id") != self.config.agent_id:
@@ -670,7 +708,7 @@ class Agent:
 
             if status == "RUNNING" and job_type == "test":
                 phase = job.get("phase") or "sync"
-                if phase in ("sync", "fetch", "test"):
+                if phase in ("sync", "pull", "fetch", "test"):
                     logger.info("恢复中断的 test 任务: %s phase=%s", job_id, phase)
                     await self._run_test_job(job)
                     return
@@ -732,6 +770,7 @@ def setup_logging():
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 async def _run_agent():
