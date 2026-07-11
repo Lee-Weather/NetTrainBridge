@@ -57,4 +57,4 @@ python humanoid/scripts/test_with_metrics.py \
   --task=x1_dh_stand --load-run=<load_run> --checkpoint=50 --headless
 ```
 
-详见 [docs/acceptance.md](../../docs/acceptance.md)、[docs/checkpoint-hub.md](../../docs/checkpoint-hub.md)。
+详见 [docs/acceptance.md](../../docs/acceptance.md)、[docs/checkpoint-hub.md](../../docs/checkpoint-hub.md)、[agent/README.md](../../agent/README.md)。

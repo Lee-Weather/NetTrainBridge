@@ -1,8 +1,16 @@
 # NetTrainBridge
 
-在家 `git push` 同步代码；**训练首选 Gradmotion（gm）**；gm 不可用时用 **`ntb train run`** 在公司训练机兜底训练；可选 **`ntb sync`** 仅同步代码、**`ntb test run`** 做真实 sim2sim（R1-3）。
+**版本 0.2** — 在家 `git push` 同步代码；**训练首选 Gradmotion（gm）**；gm 不可用时用 **`ntb train run`** 在公司训练机兜底；**`ntb test run`** 做真实 sim2sim。
 
-**gm test 默认路径（Plan 03）**：家里 `ntb` 从 gm 取 checkpoint 上传云 Server，训练机 Agent 从 Server 下载后跑 `play.py`——训练机**无需** gm 凭证。
+**gm test 默认路径**：家里 `ntb` 从 gm 取 checkpoint 上传云 Server，训练机 Agent **pull** 后跑 `play.py`——训练机**无需** gm 凭证。详见 [docs/checkpoint-hub.md](docs/checkpoint-hub.md)。
+
+| 文档 | 说明 |
+|:---|:---|
+| [cli/README.md](cli/README.md) | 家里 `ntb` 命令 |
+| [server/README.md](server/README.md) | 云 Server |
+| [agent/README.md](agent/README.md) | 训练机 Agent |
+| [docs/acceptance.md](docs/acceptance.md) | sim2sim 验收清单 |
+| [contrib/agi_origin/README.md](contrib/agi_origin/README.md) | 训练仓桥接脚本 |
 
 ## 做什么
 
@@ -77,7 +85,7 @@ flowchart TB
 **配合关系**：
 
 1. **家里 ↔ Server**：`ntb` 通过 HTTP 创建/查询任务，Server 是唯一「任务真相源」。
-2. **Agent ↔ Server**：Agent 定时 `GET /jobs/pending`，`PUT /jobs/{id}/claim` 抢占后执行；训练过程中并行 `POST` 日志、指标、GPU 心跳；结束后上传 checkpoint / test 产物。
+2. **Agent ↔ Server**：Agent 定时抢占任务；并行上报日志、指标、GPU 心跳；train 结束上传 checkpoint；test 成功上传 **`isaac_diag_*.csv`**（流式 metrics 仍走 DB）。
 3. **Agent ↔ GitHub**：按任务里的 `repo_url` + `commit_sha` clone/checkout，保证训练代码版本可追溯。
 4. **家里 ↔ gm（test 时）**：`ntb test run --gm-task-id` 用 `cli.gm_api_key` 查 checkpoint、下载 OSS 直链，上传到 Server（Plan 03）。
 5. **Agent ↔ Server（test pull）**：gm test 默认从 **本 job** 的 `data/{id}/models/` 下载模型到同窗 logs 路径；ntb test 从**父 train job** 下载。

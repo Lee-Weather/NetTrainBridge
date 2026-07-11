@@ -119,7 +119,7 @@ ntb test run `
 | C3 | `ntb artifacts download` | zip 内为 CSV（无 summary/metrics.jsonl） |
 | C4 | `ntb checkpoint list` | 有 `.pt`（gm stage 或父任务） |
 
-本地分析 CSV：用 `.cursor/skills/isaac-diag-eval`。
+本地分析 CSV：用 `.cursor/skills/isaac-diag-eval`。更多见 [agent/README.md](../agent/README.md)、[cli/README.md](../cli/README.md)。
 
 ### D. 场景差异
 

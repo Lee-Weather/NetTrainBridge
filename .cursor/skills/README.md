@@ -3,7 +3,8 @@
 本目录为 Cursor Agent Skill，可复制到**训练代码仓库**的 `.cursor/skills/`。
 
 **CLI 说明**：[cli/README.md](../../cli/README.md)  
-**验收**：[docs/acceptance.md](../../docs/acceptance.md)
+**验收**：[docs/acceptance.md](../../docs/acceptance.md)  
+**总览**：[README.md](../../README.md)
 
 ## 五种模式（见 [gm-ntb-r1](gm-ntb-r1/SKILL.md)）
 

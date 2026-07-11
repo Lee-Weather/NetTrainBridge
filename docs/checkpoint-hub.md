@@ -100,4 +100,4 @@ ntb watch <test_job_id>
 | 诊断 CSV | Server `data/{id}/test/isaac_diag_*.csv` → `ntb artifacts download` |
 | 本地 summary | 训练机 `{job}/test/summary.json`（可不上传） |
 
-详见 [acceptance.md](acceptance.md)。
+详见 [acceptance.md](acceptance.md)。分端说明：[agent/README.md](../agent/README.md)、[cli/README.md](../cli/README.md)。

@@ -1,6 +1,6 @@
-# ntb CLI 使用说明
+# ntb CLI 使用说明（0.2）
 
-`ntb` 是 NetTrainBridge 的**家里命令行客户端**：通过 HTTP 访问云 Server，创建/监控 train、sync、test 任务，下载 checkpoint 与测试产物。
+`ntb` 是 NetTrainBridge 的**家里命令行客户端**：通过 HTTP 访问云 Server，创建/监控 train、sync、test，下载 checkpoint 与 **`isaac_diag_*.csv`** 测试产物。
 
 典型使用场景：在**训练代码仓库**（如 `agi_origin`）根目录执行；与 **gm CLI** 配合完成「gm 训练 → ntb 真实 sim2sim 验证」（R1-3）。
 
@@ -45,7 +45,7 @@ ntb config init --server-url http://<云IP>:8000
 ntb config path
 ```
 
-配置文件 `cli.server_url` 指向云 Server。可选 `api_token`（或环境变量 `NETTRAINBRIDGE_API_TOKEN`）用于 Bearer 认证。
+配置文件 `cli.server_url` 指向云 Server。模板：`nettrainbridge_common/config.example.json`（`ntb config init` 自动写入）。可选 `api_token`（或 `NETTRAINBRIDGE_API_TOKEN`）用于 Bearer 认证。
 
 **gm test 路径（Plan 03）**：家里还需在 `cli` 段配置 gm 凭证（与 `gm auth status` 同账号），用于 `ntb test run` 自动上传 checkpoint 到 Server：
 
@@ -383,6 +383,9 @@ cli/
 | 文档 | 内容 |
 |:---|:---|
 | [../README.md](../README.md) | 项目总览 |
+| [../server/README.md](../server/README.md) | 云 Server |
+| [../agent/README.md](../agent/README.md) | 训练机 Agent |
 | [../docs/checkpoint-hub.md](../docs/checkpoint-hub.md) | gm test：CLI → Server → Agent |
 | [../docs/acceptance.md](../docs/acceptance.md) | sim2sim 验收清单 |
-| [../.cursor/skills/README.md](../.cursor/skills/README.md) | Cursor Skill 索引（可复制到训练仓库） |
+| [../.cursor/skills/README.md](../.cursor/skills/README.md) | Cursor Skill 索引 |
+| [../contrib/agi_origin/README.md](../contrib/agi_origin/README.md) | 训练仓桥接脚本 |
