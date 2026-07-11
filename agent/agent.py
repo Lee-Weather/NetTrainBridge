@@ -157,6 +157,7 @@ class Agent:
         """轮询并抢占待处理任务。"""
         jobs = await self.api_client.get_pending_jobs()
         if not jobs:
+            logger.info("轮询中，无待处理任务")
             return
 
         job = None

@@ -14,7 +14,7 @@ python main.py
 # 交互文档: http://localhost:8000/docs
 ```
 
-生成配置：复制 `config.example.json` 到 `~/.nettrainbridge/config.json` 并编辑 `server` 段。
+生成配置：复制 `nettrainbridge_common/config.example.json` 到 `~/.nettrainbridge/config.json` 并编辑 `server` 段。
 
 ## CLI 监控（家里电脑）
 
@@ -44,7 +44,7 @@ ntb logs <job_id> -f        # 实时日志
 | Webhook 密钥 | `webhook_secret` | `NETTRAINBRIDGE_WEBHOOK_SECRET` |
 | 仓库白名单 | `allowed_repos`（数组） | `NETTRAINBRIDGE_ALLOWED_REPOS`（逗号分隔） |
 
-生成配置：`cp ../config.example.json ~/.nettrainbridge/config.json`（或家里电脑 `ntb config init`）
+生成配置：`cp ../nettrainbridge_common/config.example.json ~/.nettrainbridge/config.json`（或家里电脑 `ntb config init`）
 
 ## API 接口
 

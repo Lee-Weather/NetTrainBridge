@@ -257,7 +257,7 @@ config.json
 
 ```bash
 mkdir -p ~/.nettrainbridge
-cp config.example.json ~/.nettrainbridge/config.json
+cp nettrainbridge_common/config.example.json ~/.nettrainbridge/config.json
 ```
 
 编辑 `server` 段（按需改 `webhook_secret`、`allowed_repos`）：
@@ -289,7 +289,7 @@ python main.py
 
 ```bash
 mkdir -p ~/.nettrainbridge
-cp config.example.json ~/.nettrainbridge/config.json
+cp nettrainbridge_common/config.example.json ~/.nettrainbridge/config.json
 ```
 
 编辑 `agent` 段（`proxy` 按公司实际代理修改；**默认无需** `gm_api_key`）：
@@ -495,9 +495,10 @@ NetTrainBridge/
 ├── server/          # 云 API
 ├── agent/           # 训练机 Agent
 ├── cli/             # ntb 客户端
-├── nettrainbridge_common/   # 共享配置加载
-├── config.example.json
-└── plan/            # 设计文档（见 plan/README.md）
+├── nettrainbridge_common/   # 共享配置加载 + config.example.json
+├── contrib/         # 推送到训练仓的桥接脚本
+├── docs/            # 现行文档（checkpoint 中转、验收清单）
+└── config_loader.py # 兼容层（转发到 nettrainbridge_common）
 ```
 
-设计与阶段规划见 [plan/README.md](plan/README.md)；gm test checkpoint 中转见 [plan/03plan/plan03-checkpoint-hub.md](plan/03plan/plan03-checkpoint-hub.md)。
+设计与验收见 [docs/README.md](docs/README.md)；gm test checkpoint 中转见 [docs/checkpoint-hub.md](docs/checkpoint-hub.md)。

@@ -79,26 +79,32 @@ TEST_JSON=$(curl -s -X POST "$BASE_URL/jobs" \
   -H "Content-Type: application/json" \
   -d "{\"repo_url\":\"https://github.com/test/v02-art-test.git\",\"commit_sha\":\"art_test\",\"job_type\":\"test\",\"parent_train_job_id\":\"$JOB_ID\",\"load_run\":\"2026-01-14_09-58-10test_20_video\",\"checkpoint\":3000}")
 TEST_ID=$(echo "$TEST_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-echo '{"mode":"mock"}' > /tmp/step9_summary.json
-curl -s -X POST "$BASE_URL/jobs/$TEST_ID/test/summary.json" \
-  -F "file=@/tmp/step9_summary.json" > /dev/null
-echo '{"step":1,"reward":1.1,"kind":"test"}' > /tmp/step9_metrics.jsonl
-curl -s -X POST "$BASE_URL/jobs/$TEST_ID/test/metrics.jsonl" \
-  -F "file=@/tmp/step9_metrics.jsonl" > /dev/null
+# 正式产物：最新 isaac_diag_*.csv（不再上传 summary.json / metrics.jsonl 到 artifacts）
+printf 'timestamp_ns,cmd_linear_x,base_lin_vel_x,feet_contact_force_penalty\n1,0.4,0.38,0.0\n' \
+  > /tmp/step9_isaac_diag.csv
+curl -s -X POST "$BASE_URL/jobs/$TEST_ID/test/isaac_diag_20260114_120000.csv" \
+  -F "file=@/tmp/step9_isaac_diag.csv" > /dev/null
 
 R=$(curl -s "$BASE_URL/jobs/$TEST_ID/artifacts")
-check "artifacts list summary" "summary.json" "$R"
-check "artifacts list metrics" "metrics.jsonl" "$R"
+check "artifacts list csv" "isaac_diag_" "$R"
 
 R=$($NTB artifacts list "$TEST_ID" 2>&1)
-check "ntb artifacts list" "summary.json" "$R"
+check "ntb artifacts list csv" "isaac_diag_" "$R"
 
 $NTB artifacts download "$TEST_ID" -o /tmp/step9_artifacts.zip >/dev/null
-if python3 -c "import zipfile; z=zipfile.ZipFile('/tmp/step9_artifacts.zip'); print('summary.json' in z.namelist())" | grep -q True; then
-    echo "  ✅ artifacts zip 含 summary.json"
+if python3 -c "
+import zipfile
+z = zipfile.ZipFile('/tmp/step9_artifacts.zip')
+names = z.namelist()
+assert any(n.startswith('isaac_diag_') and n.endswith('.csv') for n in names), names
+assert 'summary.json' not in names
+assert 'metrics.jsonl' not in names
+print('ok')
+" | grep -q ok; then
+    echo "  ✅ artifacts zip 含 isaac_diag csv（无 summary/metrics）"
     ((PASS++)) || true
 else
-    echo "  ❌ artifacts zip 缺少 summary.json"
+    echo "  ❌ artifacts zip 内容不符合 CSV 产物约定"
     ((FAIL++)) || true
 fi
 echo ""
@@ -121,7 +127,7 @@ else
 fi
 echo ""
 
-rm -f /tmp/step9_model.pt /tmp/step9_dl.pt /tmp/step9_summary.json /tmp/step9_metrics.jsonl /tmp/step9_artifacts.zip
+rm -f /tmp/step9_model.pt /tmp/step9_dl.pt /tmp/step9_isaac_diag.csv /tmp/step9_artifacts.zip
 
 echo "================================"
 echo "结果: ✅ $PASS 通过  ❌ $FAIL 失败"

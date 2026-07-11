@@ -1,13 +1,66 @@
+# ── Python ──
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-.env
-.venv
-venv/
 *.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# ── 虚拟环境 ──
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+ENV/
+
+# ── 测试 / 类型检查 ──
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# ── Server 运行时（任务 data/、SQLite、checkpoint、分片上传 .tmp）──
+server/data/
+server/**/*.db
+server/**/*.db-journal
+
+# ── 通用运行时数据目录 ──
 data/
+*.db
 *.db-journal
+
+# ── 日志与临时文件 ──
+*.log
+*.tmp
+*.swp
+*~
+
+# ── IDE / OS ──
+.idea/
+.vscode/
+*.sublime-*
+.DS_Store
+Thumbs.db
+
+# ── CLI / Agent 本地产物（与 Server 规则互补，显式标注）──
+cli/**/__pycache__/
+agent/**/__pycache__/
+server/**/__pycache__/
+
+# ── 本地密钥与运行记录（仅保留 *.example.json）──
+**/gm-accounts.json
+**/record-run.json
+!**/gm-accounts.example.json
+!**/record-run.example.json
+
+# ── 本地 mock / 安装产物 ──
+logs/
+nettrainbridge.egg-info/

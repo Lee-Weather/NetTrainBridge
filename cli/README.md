@@ -75,7 +75,7 @@ ntb config path
 
 主路径：**gm 训练** → 满意后 **`ntb test run`**（家里自动 stage → 训练机 pull → 真实 sim2sim）。
 
-详见 [plan/03plan/plan03-checkpoint-hub.md](../plan/03plan/plan03-checkpoint-hub.md)。
+详见 [docs/checkpoint-hub.md](../docs/checkpoint-hub.md)。
 
 ---
 
@@ -315,18 +315,19 @@ ntb logs <job_id> -f               # SSE 实时
 建议在训练代码仓库安装 Cursor Skill（复制自 NetTrainBridge）：
 
 ```text
-<训练仓库>/.cursor/skills/gm-ntb-r1-e2e/
-├── SKILL.md          # AI 操作指南
-└── scripts/
-    ├── preflight.ps1   # Windows 开工检查
-    └── verify-test.ps1 # test 完成后验收
+<训练仓库>/.cursor/skills/
+├── gm-ntb-r1/           # 编排
+├── gm-ntb-preflight/    # 开工检查
+├── gm-ntb-gm-train/     # gm 训练
+├── gm-ntb-ntb-train/    # ntb 训练
+└── gm-ntb-ntb-test/     # ntb test + verify
 ```
 
 **假定**：本机已安装 `ntb` 与 `gm`；Cursor 打开**训练仓库**根目录。
 
 ```powershell
 # 1. 开工检查
-powershell -ExecutionPolicy Bypass -File .cursor\skills\gm-ntb-r1-e2e\scripts\preflight.ps1
+powershell -ExecutionPolicy Bypass -File .cursor\skills\gm-ntb-preflight\scripts\preflight.ps1
 
 # 2. gm 训练（见 gm CLI）
 gm task create --file .\create-train.json
@@ -336,10 +337,10 @@ gm task run --task-id task_gm_xxx
 ntb test run --gm-task-id task_gm_xxx --load-run <load_run> --watch
 
 # 4. 验收
-powershell -File .cursor\skills\gm-ntb-r1-e2e\scripts\verify-test.ps1 <test_job_id> -Source gm
+powershell -File .cursor\skills\gm-ntb-ntb-test\scripts\verify-test.ps1 <test_job_id> -Source gm
 ```
 
-详细步骤：[plan/r1-3-manual-acceptance.md](../plan/r1-3-manual-acceptance.md)
+详细步骤：[docs/acceptance.md](../docs/acceptance.md)
 
 ---
 
@@ -382,8 +383,6 @@ cli/
 | 文档 | 内容 |
 |:---|:---|
 | [../README.md](../README.md) | 项目总览 |
-| [../plan/03plan/plan03-checkpoint-hub.md](../plan/03plan/plan03-checkpoint-hub.md) | Plan 03：CLI → Server → Agent |
-| [../plan/r1-3-manual-acceptance.md](../plan/r1-3-manual-acceptance.md) | R1-3 手动验收 |
-| [../plan/manual-operations-v02.md](../plan/manual-operations-v02.md) | v0.2 操作手册 |
-| [../plan/diff/gm-cli/SKILL.md](../plan/diff/gm-cli/SKILL.md) | gm CLI 参考 |
-| [../.cursor/skills/gm-ntb-r1-e2e/SKILL.md](../.cursor/skills/gm-ntb-r1-e2e/SKILL.md) | Cursor Skill 模板（复制到训练仓库） |
+| [../docs/checkpoint-hub.md](../docs/checkpoint-hub.md) | gm test：CLI → Server → Agent |
+| [../docs/acceptance.md](../docs/acceptance.md) | sim2sim 验收清单 |
+| [../.cursor/skills/README.md](../.cursor/skills/README.md) | Cursor Skill 索引（可复制到训练仓库） |
